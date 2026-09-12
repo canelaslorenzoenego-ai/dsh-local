@@ -7,7 +7,7 @@
 Embedded Linux · DeepSeek Harness console · OpenAI-compatible gateway · real terminal —
 all on `127.0.0.1`, all on-device, zero cloud, zero accounts.
 
-[![version](https://img.shields.io/badge/version-v2.8.0-4D6BFE)](#version-history)
+[![version](https://img.shields.io/badge/version-v2.8.1-4D6BFE)](#version-history)
 [![platform](https://img.shields.io/badge/platform-Android%208.0%2B%20ARM64-2FD575)](#requirements)
 [![tests](https://img.shields.io/badge/smoke%20tests-98%2F98%20%E2%9C%93-2FD575)](#testing)
 [![backend](https://img.shields.io/badge/backend-none%20·%20on--device-F5B942)](#the-web-page-in-this-repo)
@@ -45,7 +45,7 @@ workstation inside a single ~30 MB APK:
 
 ## Quick start
 
-1. **Download** [`public/downloads/dsh-local-v2.8.0.apk`](public/downloads/dsh-local-v2.8.0.apk)
+1. **Download** [`public/downloads/dsh-local-v2.8.1.apk`](public/downloads/dsh-local-v2.8.1.apk)
    (or grab it from the [website](https://canelaslorenzoenego-ai.github.io/dsh-local/))
    and sideload it (allow *install unknown apps* when prompted).
 2. **Open the app.** The embedded Linux extracts itself on first open (~30 s, one time)
@@ -328,7 +328,7 @@ The vault endpoint (`GET /api/secrets`) lists which ids are set — never values
 
 ```
 ├── apk/                              # the product: native Android source
-│   ├── AndroidManifest.xml           # com.dshlocal.app, targetSdk 28, v2.8.0
+│   ├── AndroidManifest.xml           # com.dshlocal.app, targetSdk 28, v2.8.1
 │   ├── build.sh                      # aapt2 → javac → d8 → zipalign → apksigner
 │   ├── src/com/dshlocal/app/
 │   │   ├── MainActivity.java         # dashboard, session-link card, PIN, WebView hosts
@@ -479,7 +479,8 @@ an inline error on the harness card; press Start to retry.
 | **v2.7.0** | **Chat playground, files manager, usage analytics, activity feed, secrets vault, notification tap-through, in-app console — 80/80 green** |
 | v2.7.1 | **Device bugfix release: LD_LIBRARY_PATH exec fix, shebang repair, proxy self-installs node, crash diagnostics on the dashboard — 80/80 green** |
 | v2.7.2 | **Hardening release: symlink-escape-proof workspace API, request-body caps, file-size caps, chat history cap, gateway apiKeys support in the chat relay, terminal polling backoff — 91/91 green** |
-| **v2.8.0** | **Real Termux package system: apt-backed Packages tab (search 1000+ repo packages, install/uninstall, live job log), model installs its own tools via shell `apt install`, busybox applets on PATH — 98/98 green + website basename fix** |
+| v2.8.0 | Real Termux package system: apt-backed Packages tab (search 1000+ repo packages, install/uninstall, live job log), model installs its own tools via shell `apt install`, busybox applets on PATH — 98/98 green + website basename fix |
+| **v2.8.1** | **Device fix release: gateway Start button was a no-op (broken else-if chain — now both servers always start together), apt keyring + http-sources fix so real `apt install nodejs` works on-device, apt failures surface their logs, terminal tab auto-starts the gateway instead of showing ERR_CONNECTION_REFUSED** |
 
 ---
 

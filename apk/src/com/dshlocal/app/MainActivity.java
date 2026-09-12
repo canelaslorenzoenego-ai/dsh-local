@@ -78,6 +78,7 @@ public class MainActivity extends Activity {
     private String cachedLink = null;
     private String cachedToken = null;
     private String terminalTokenLoaded = null;
+    private boolean terminalNeedsReload = false; // set when the tab was opened before :8788 was up
     private String statusSubTagH = null;
 
     private final Runnable poll = new Runnable() {
@@ -302,10 +303,13 @@ public class MainActivity extends Activity {
             sessDot.setTextColor(0xFF2FD575);
             btnCopyLink.setEnabled(true); btnCopyLink.setAlpha(1f);
             btnRotate.setEnabled(true); btnRotate.setAlpha(1f);
-            // keep the in-app terminal authenticated with the current token
+            // keep the in-app terminal authenticated with the current token —
+            // and once :8788 is actually reachable, force a reload so a stale
+            // ERR_CONNECTION_REFUSED view is replaced by the live shell
             if (terminalWebView != null && cachedToken != null
-                    && !cachedToken.equals(terminalTokenLoaded)) {
+                    && (!cachedToken.equals(terminalTokenLoaded) || terminalNeedsReload)) {
                 terminalTokenLoaded = cachedToken;
+                terminalNeedsReload = false;
                 terminalWebView.loadUrl("http://127.0.0.1:" + TERM_PORT + "/?token=" + cachedToken);
             }
         } else {
@@ -386,6 +390,12 @@ public class MainActivity extends Activity {
     }
 
     private void ensureTerminal() {
+        // Never show a dead :8788 page — if the gateway isn't up, bring both
+        // servers up instead of loading an ERR_CONNECTION_REFUSED view.
+        if (!isUp(TERM_PORT) && !wantProxy) {
+            terminalNeedsReload = true;
+            startServer("proxy");
+        }
         if (terminalLoaded) return;
         terminalLoaded = true;
         terminalWebView = new WebView(this);
@@ -411,18 +421,16 @@ public class MainActivity extends Activity {
             installBootstrap(which);
             return;
         }
-        String action;
-        if ("harness".equals(which)) {
-            action = ServerService.ACTION_START_HARNESS;
-            wantHarness = true;
-            ServerService.setTapIntent(this, ServerService.TAP_OPEN_CONSOLE);
-        } else {
-            action = ServerService.ACTION_START_PROXY;
-            wantProxy = true;
-            ServerService.setTapIntent(this, ServerService.TAP_OPEN_TERMINAL);
-        }
-        startService(new Intent(this, ServerService.class).setAction(action));
-        toast(("harness".equals(which) ? "Harness" : "Proxy") + " starting…");
+        wantHarness = true;
+        wantProxy = true; // both servers always come up together
+        ServerService.setTapIntent(this, "harness".equals(which)
+                ? ServerService.TAP_OPEN_CONSOLE : ServerService.TAP_OPEN_TERMINAL);
+        Intent i = new Intent(this, ServerService.class)
+                .setAction(ServerService.ACTION_START_HARNESS);
+        startService(i);
+        startService(new Intent(this, ServerService.class)
+                .setAction(ServerService.ACTION_START_PROXY));
+        toast("Starting Harness + Gateway…");
     }
 
     private void stopServer(String which) {

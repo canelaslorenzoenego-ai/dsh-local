@@ -179,9 +179,29 @@ final class BootstrapInstaller {
         conf.append("Dpkg::Options:: \"--force-bad-path\";\n");
         conf.append("Dpkg::Options:: \"--instdir=").append(prefix).append("\";\n");
         conf.append("Acquire::AllowInsecureRepositories \"true\";\n");
+        conf.append("Acquire::Retries \"3\";\n");
         writeFile(new File(prefix, "etc/apt/apt.conf"), conf.toString());
         new File(prefix, "var/log/apt").mkdirs();
 
+        // The bootstrap ships the Termux signing keys in share/termux-keyring/ but
+        // leaves etc/apt/trusted.gpg.d/ empty — normally Termux's own first-run
+        // copies them. Without them every fetched list is "unauthenticated" and
+        // `apt install` refuses, so do the copy here.
+        File keyring = new File(prefix, "share/termux-keyring");
+        File[] keys = keyring.listFiles();
+        if (keys != null && keys.length > 0) {
+            File dstDir = new File(prefix, "etc/apt/trusted.gpg.d");
+            dstDir.mkdirs();
+            for (File k : keys) {
+                if (!k.isFile() || !k.getName().endsWith(".gpg")) continue;
+                try { writeFile(new File(dstDir, k.getName()), read(k)); } catch (Exception ignored) {}
+            }
+        }
+
+        // This bootstrap ships no https apt method (lib/apt/methods/ has only http),
+        // so an https sources.list makes `apt update` die with "method driver could
+        // not be found". Point at the same mirror over plain http — apt still
+        // verifies every file against the keyring above.
         File sources = new File(prefix, "etc/apt/sources.list");
         if (sources.exists()) {
             String c = read(sources);

@@ -77,10 +77,12 @@ public class ServerService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         String action = intent == null ? null : intent.getAction();
-        if (ACTION_START_HARNESS.equals(action)) ensureRuntime();
+        // ensureRuntime() first for both starts — but as its own statement, NOT part
+        // of the else-if chain: chaining it made startProxy() unreachable and the
+        // gateway Start button did nothing.
+        if (ACTION_START_HARNESS.equals(action) || ACTION_START_PROXY.equals(action)) ensureRuntime();
         if (ACTION_START_HARNESS.equals(action)) startHarness();
         else if (ACTION_STOP_HARNESS.equals(action)) stopProc("harness");
-        else if (ACTION_START_PROXY.equals(action)) ensureRuntime();
         else if (ACTION_START_PROXY.equals(action)) startProxy();
         else if (ACTION_STOP_PROXY.equals(action)) stopProc("proxy");
         startForeground(1, buildNotification());

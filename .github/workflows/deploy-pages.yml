@@ -39,8 +39,8 @@ jobs:
       # without the Release asset. (The site also links to the Release.)
       - name: Copy release APK next to the site
         run: |
-          test -f public/downloads/dsh-local-v2.8.0.apk
-          cp public/downloads/dsh-local-v2.8.0.apk dist/site/
+          test -f public/downloads/dsh-local-v2.8.1.apk
+          cp public/downloads/dsh-local-v2.8.1.apk dist/site/
 
       - uses: actions/configure-pages@v5
 
