@@ -29,36 +29,18 @@ jobs:
         run: bun install
 
       - name: Build site (base /dsh-local/)
-        run: |
-          bunx --bun vite build --base=/dsh-local/ --outDir dist/site || {
-            echo 'Vite build failed - continuing to push static fallback';
-            mkdir -p dist/site;
-            echo '<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>DSH Local - Download</title>
-<style>body{background:#0B0E14;color:#E8EDF7;display:flex;align-items:center;justify-content:center;height:100vh;font-family:system-ui,sans-serif;text-align:center;padding:24px}
-.error{padding:20px;border:1px solid rgba(244,91,105,0.4);border-radius:12px;background:rgba(244,91,105,0.1);max-width:400px}
-h2{font-size:18px;margin:0 0 12px}
-p{font-size:14px;color:#8B96AC;line-height:1.6}
-</style></head><body>
-<div class="error">
-<h2>⚠ Website temporarily unavailable</h2>
-<p>DSH Local is a standalone Android app. The web download failed, but the APK is still available directly from our GitHub page.</p>
-<a href="https://raw.githubusercontent.com/canelaslorenzoenego-ai/dsh-local/main/public/downloads/dsh-local-v2.7.0.apk" style="display:inline-block;margin:12px 0;padding:10px 20px;background:#4D6BFE;color:#fff;text-decoration:none;border-radius:8px;font-size:14px">Download APK from GitHub</a>
-<p style="margin-top:12px;font-size:12px"><a href="https://github.com/canelaslorenzoenego-ai/dsh-local/issues" style="color:#8FA6FF;text-decoration:none">Report a website issue</a></p>
-</div>
-</body></html>
-' > dist/site/index.html;
-            echo 'Created static fallback page';
-          }
-          cp dist/site/index.html dist/site/404.html
+        run: bunx --bun vite build --base=/dsh-local/ --outDir dist/site
 
+      # Serve the exact same SPA on any unknown path (single-page site).
+      - name: SPA fallback (404.html = index.html)
+        run: cp dist/site/index.html dist/site/404.html
+
+      # Ship the signed APK with the site so the Download button works even
+      # without the Release asset. (The site also links to the Release.)
       - name: Copy release APK next to the site
         run: |
-          mkdir -p dist/site
+          test -f public/downloads/dsh-local-v2.7.0.apk
           cp public/downloads/dsh-local-v2.7.0.apk dist/site/
-
-      - name: Spell out the base-path fallback (SPA is single-page, 404.html = index.html)
-        run: cp dist/site/index.html dist/site/404.html
 
       - uses: actions/configure-pages@v5
 

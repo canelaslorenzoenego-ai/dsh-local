@@ -23,16 +23,12 @@ import {
 } from "lucide-react";
 
 const APK_VERSION = "v2.7.0";
-// The GitHub Pages site and the raw repo both serve the file, but only raw
-// GitHub's .apk URL always resolves from anywhere (no broken relative asset refs
-// if the SPA chunks fail to load). Local dev still uses the public/ mount.
-const APK_FILE = import.meta.env.BASE_URL.startsWith("/dsh-local")
-  ? `https://raw.githubusercontent.com/canelaslorenzoenego-ai/dsh-local/main/public/downloads/dsh-local-${APK_VERSION}.apk`
-  : `/downloads/dsh-local-${APK_VERSION}.apk`;
-// Defensive: if the SPA itself fails to bootstrap, keep a known-good download
-// redirect available so the error handling path stays reachable.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const DOWNLOAD_REDIRECT = APK_FILE;
+// Primary: the GitHub Release asset (permanent, CDN-backed, works everywhere).
+// Fallback: the raw file on main. Both serve the same signed v2.7.0 APK.
+const APK_FILE =
+  "https://github.com/canelaslorenzoenego-ai/dsh-local/releases/latest/download/dsh-local-v2.7.0.apk";
+const APK_FALLBACK =
+  "https://raw.githubusercontent.com/canelaslorenzoenego-ai/dsh-local/main/public/downloads/dsh-local-v2.7.0.apk";
 
 const fadeUp = {
   initial: { opacity: 0, y: 24 },
@@ -55,7 +51,7 @@ const capabilities = [
   {
     icon: Terminal,
     title: "Built-in terminal",
-    body: "Real bash login shell in a xterm.js tab — inside the app or in Chrome. git, python, jq, ripgrep pre-provisioned into the embedded Linux.",
+    body: "Real bash login shell in a xterm.js tab — inside the app or in Chrome. git, python, jq, ripgrep, ssh pre-provisioned into the embedded Linux.",
   },
   {
     icon: Zap,
