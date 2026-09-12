@@ -308,6 +308,86 @@ async function until(fn, ms) {
     r = await req('GET', '/../../etc/passwd');
     record('path traversal blocked', r.code === 404);
 
+    // ---- adversarial hardening suite ----
+    // 1) request-body cap: a giant chat payload must 413, not OOM the server
+    const big = 'x'.repeat(3 * 1024 * 1024);
+    r = await req('POST', '/api/chat', { message: big });
+    record('hardening: 3 MB body rejected with 413', r.code === 413, 'code=' + r.code);
+    r = await req('GET', '/healthz');
+    record('hardening: server alive after oversized body', r.code === 200);
+
+    // 2) symlink escape: link inside the workspace pointing outside must not be followable
+    const wsRoot = path.join(HOME, 'workspace');
+    try { fs.symlinkSync(HOME, path.join(wsRoot, 'out')); } catch (e) {}
+    r = await req('GET', '/api/files/read?path=out/dsh-data/session.json');
+    record('hardening: symlink escape refused', r.code === 404, 'code=' + r.code);
+    r = await req('GET', '/api/files?dir=out');
+    record('hardening: symlink dir escape refused', r.code === 404, 'code=' + r.code);
+    r = await req('POST', '/api/files/delete', { path: 'out/dsh-data/session.json' });
+    record('hardening: symlink delete escape refused', r.code === 403, 'code=' + r.code);
+    try { fs.unlinkSync(path.join(wsRoot, 'out')); } catch (e) {}
+
+    // 3) oversized file read refused (4 MB cap) instead of stringing the editor
+    const bigPath = path.join(wsRoot, 'big.bin');
+    fs.writeFileSync(bigPath, Buffer.alloc(5 * 1024 * 1024, 65));
+    r = await req('GET', '/api/files/read?path=big.bin');
+    record('hardening: >4 MB file read refused', r.code === 404, 'code=' + r.code);
+    fs.unlinkSync(bigPath);
+
+    // 4) chat history hard cap: flood a chat, then confirm only 500 messages persist
+    r = await req('POST', '/api/chats', { title: 'cap test' });
+    const capChat = JSON.parse(r.body);
+    for (let i = 0; i < 260; i++) {
+      r = await req('POST', '/api/chat', { chatId: capChat.id, message: 'm' + i });
+    }
+    const capData = JSON.parse(fs.readFileSync(path.join(HOME, 'dsh-data', 'chats', capChat.id + '.json'), 'utf8'));
+    record('hardening: chat history capped at 500 messages', capData.messages.length === 500, 'len=' + capData.messages.length);
+    await req('POST', '/api/chats/delete', { id: capChat.id });
+
+    // 5) malformed JSON body must degrade to {} (400 on required fields), not a crash
+    await new Promise((resolve) => {
+      const rq = http.request({ host: '127.0.0.1', port: 3080, path: '/api/chat?token=' + encodeURIComponent(SESS), method: 'POST',
+        headers: { 'Content-Type': 'application/json' } }, res => {
+        let b = ''; res.on('data', d => { b += d; }); res.on('end', () => {
+          record('hardening: malformed JSON body handled', res.statusCode === 400, 'code=' + res.statusCode);
+          resolve();
+        });
+      });
+      rq.on('error', () => { record('hardening: malformed JSON body handled', false, 'conn error'); resolve(); });
+      rq.end('{not json');
+    });
+
+    // 6) gateway apiKeys: when gateway.json requires a key, the chat relay must present it
+    fs.writeFileSync(path.join(HOME, 'gateway.json'), JSON.stringify({ apiKeys: ['smoke-key-1'] }));
+    r = await req('POST', '/api/chat', { message: 'authed?' });
+    // Echo reply through an authed gateway = the relay presented a valid bearer
+    // key (a missing key would have drawn a 401, surfacing as a non-echo reply).
+    const chatAuthed = JSON.parse(r.body);
+    record('hardening: chat relay sends bearer key when gateway requires it',
+      chatAuthed.reply && chatAuthed.reply.indexOf('echo mode') !== -1,
+      'reply=' + String(chatAuthed.reply || '').slice(0, 50).replace(/\n/g, ' '));
+    // and a wrong key must NOT get through the gateway itself
+    const rq6 = await new Promise((resolve) => {
+      const rq = http.request({ host: '127.0.0.1', port: 8787, path: '/v1/chat/completions', method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer wrong-key' } }, resolve);
+      rq.on('error', () => resolve({ statusCode: 0 }));
+      rq.end(JSON.stringify({ model: 'x', messages: [] }));
+    });
+    record('hardening: gateway rejects wrong bearer key', rq6.statusCode === 401, 'code=' + rq6.statusCode);
+    fs.unlinkSync(path.join(HOME, 'gateway.json'));
+
+    // 7) terminal: locked (token-less) request gets 401, not the shell
+    await new Promise((resolve) => {
+      const rq = http.request({ host: '127.0.0.1', port: 8788, path: '/stream', method: 'GET' }, res => {
+        res.resume(); res.on('end', () => {
+          record('hardening: terminal fails closed without token', res.statusCode === 401, 'code=' + res.statusCode);
+          resolve();
+        });
+      });
+      rq.on('error', () => { record('hardening: terminal fails closed without token', false, 'conn error'); resolve(); });
+      rq.end();
+    });
+
     // ---- state persistence across restart ----
     procs[0].kill();
     await until(async () => { try { await req('GET', '/healthz'); return false; } catch (e) { return true; } }, 4000);

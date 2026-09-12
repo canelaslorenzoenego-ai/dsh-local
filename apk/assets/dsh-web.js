@@ -239,11 +239,17 @@ function json(res, code, obj) {
   res.writeHead(code, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(obj));
 }
+const BODY_CAP = 2 * 1024 * 1024; // every console API payload is capped
+const MAX_READ_BYTES = 4 * 1024 * 1024; // files API refuses to load >4 MB into the editor
 function body(req) {
   return new Promise((resolve) => {
-    let b = '';
-    req.on('data', d => { b += d; });
-    req.on('end', () => { try { resolve(JSON.parse(b || '{}')); } catch (e) { resolve({}); } });
+    let b = '', over = false;
+    req.on('data', d => { b += d; if (b.length > BODY_CAP) { over = true; b = ''; } });
+    req.on('error', () => resolve({}));
+    req.on('end', () => {
+      if (over) return resolve({ __tooLarge: true });
+      try { resolve(JSON.parse(b || '{}')); } catch (e) { resolve({}); }
+    });
   });
 }
 function probe(port) {
@@ -326,12 +332,22 @@ function bumpUsage(model, tool, msgs) {
 // Conversations stored app-private; every message is also an event.
 const CHATS_DIR = path.join(DATA, 'chats');
 fs.mkdirSync(CHATS_DIR, { recursive: true });
+// The chat client authenticates to the gateway exactly like external clients:
+// if gateway.json declares apiKeys, send the first one as a bearer token.
+function gatewayAuth() {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(HOME, 'gateway.json'), 'utf8'));
+    const k = cfg && Array.isArray(cfg.apiKeys) && cfg.apiKeys[0];
+    return k ? { Authorization: 'Bearer ' + String(k) } : {};
+  } catch (e) { return {}; }
+}
 function chatFile(id) { return path.join(CHATS_DIR, id.replace(/[^a-zA-Z0-9_-]/g, '') + '.json'); }
 function readChat(id) {
   return readJson(chatFile(id), null);
 }
 function writeChat(c) {
   c.updated = Date.now();
+  if (c.messages && c.messages.length > 500) c.messages = c.messages.slice(-500); // hard cap
   fs.writeFileSync(chatFile(c.id), JSON.stringify(c, null, 2));
 }
 function newChat(title) {
@@ -350,9 +366,28 @@ function chatSummary(c) { return { id: c.id, title: c.title, created: c.created,
 // Browsing is confined to the workspace root; symlink-aware, no traversal.
 const WORKSPACE = path.join(HOME, 'workspace');
 fs.mkdirSync(WORKSPACE, { recursive: true });
+const WORKSPACE_REAL = fs.realpathSync(WORKSPACE);
+// True path of abs, resolving symlinks even when abs doesn't exist yet:
+// the deepest existing ancestor is resolved, non-existent tail components
+// (which cannot be symlinks) are joined back on.
+function realOf(abs) {
+  try { return fs.realpathSync(abs); } catch (e) {}
+  let cur = abs; const tail = [];
+  for (;;) {
+    const parent = path.dirname(cur);
+    if (parent === cur) return null; // hit root — nothing existed
+    tail.unshift(path.basename(cur));
+    cur = parent;
+    try { return path.join(fs.realpathSync(cur), ...tail); } catch (e) { continue; }
+  }
+}
 function safePath(p) {
-  const real = path.resolve(p);
-  if (real !== WORKSPACE && !real.startsWith(WORKSPACE + path.sep)) return null;
+  // Resolve symlinks component-wise so a link inside the workspace cannot
+  // point outside it. For not-yet-existing paths (writes) the deepest
+  // existing ancestor is resolved instead.
+  const real = realOf(path.resolve(p));
+  if (!real) return null;
+  if (real !== WORKSPACE_REAL && !real.startsWith(WORKSPACE_REAL + path.sep)) return null;
   return real;
 }
 function listFiles(dir) {
@@ -381,7 +416,10 @@ function listFiles(dir) {
 function readWorkspaceFile(rel) {
   const real = safePath(path.resolve(WORKSPACE, rel));
   if (!real) return null;
-  try { return fs.readFileSync(real, 'utf8'); } catch (e) { return null; }
+  try {
+    if (fs.statSync(real).size > MAX_READ_BYTES) return null; // refuse huge files
+    return fs.readFileSync(real, 'utf8');
+  } catch (e) { return null; }
 }
 function writeWorkspaceFile(rel, content) {
   const real = safePath(path.resolve(WORKSPACE, rel));
@@ -642,6 +680,7 @@ const server = http.createServer(async (req, res) => {
   }
   if (u.pathname === '/api/chat' && req.method === 'POST') {
     const b = await body(req);
+    if (b.__tooLarge) return json(res, 413, { error: 'payload too large' });
     const text = String(b.message || '').slice(0, 8000);
     if (!text.trim()) return json(res, 400, { error: 'message required' });
     const c = b.chatId ? readChat(b.chatId) : null;
@@ -656,7 +695,10 @@ const server = http.createServer(async (req, res) => {
       });
       const rq = http.request({
         host: '127.0.0.1', port: 8787, path: '/v1/chat/completions', method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
+        headers: Object.assign({
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(data),
+        }, gatewayAuth()),
       }, (up) => {
         let buf = '';
         up.on('data', (d) => { buf += d; });

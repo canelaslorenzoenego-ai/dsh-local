@@ -39,20 +39,25 @@
   }
 
   var seq = 0;
+  var DELAY_OK = 180, DELAY_MAX = 3000, delay = DELAY_OK, locked = false;
   function pump() {
+    if (locked) return; // token rejected — stop hammering the server
     fetch(withToken('/stream?seq=' + seq)).then(function(r){
       if (r.status === 401) throw new Error('locked');
       return r.json();
     }).then(function(j){
       if (j.data) term.write(j.data);
       seq = j.seq;
+      delay = DELAY_OK; // healthy — back to fast polling
       document.getElementById('offline').style.display = 'none';
-    }).catch(function(){
+    }).catch(function(e){
+      if (e && e.message === 'locked') { locked = true; }
+      // exponential backoff while the server is down: 180ms → 360 → 720 → 1.4s → 3s
+      delay = Math.min(delay * 2, DELAY_MAX);
       document.getElementById('offline').style.display = 'flex';
     });
   }
-  setInterval(pump, 180);
-  pump();
+  (function loop(){ pump(); setTimeout(loop, delay); })();
 
   term.onData(function(d){
     fetch(withToken('/input'), { method:'POST', body: d });

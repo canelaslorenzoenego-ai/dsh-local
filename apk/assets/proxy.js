@@ -22,14 +22,25 @@ const WEB = path.join(HOME, 'web');
 const CONFIG = path.join(HOME, 'gateway.json');
 
 // ---- session auth (shared with dsh-web.js: $HOME/dsh-data/session.json) ----
+// FAIL-CLOSED: if the harness hasn't minted a session yet, the proxy mints one
+// itself (same file, same shape) — the terminal is never token-less.
 const SESSION_FILE = path.join(HOME, 'dsh-data', 'session.json');
 function sessionToken() {
   try { return JSON.parse(fs.readFileSync(SESSION_FILE, 'utf8')).token; }
-  catch (e) { return null; }
+  catch (e) {
+    try {
+      fs.mkdirSync(path.dirname(SESSION_FILE), { recursive: true });
+      const tok = crypto.randomBytes(24).toString('base64url');
+      fs.writeFileSync(SESSION_FILE, JSON.stringify(
+        { token: tok, created: Date.now(), rotations: 0, mintedBy: 'proxy' }, null, 2));
+      try { fs.chmodSync(SESSION_FILE, 0o600); } catch (e2) {}
+      return tok;
+    } catch (e2) { return null; }
+  }
 }
 function tokenOk(req, u) {
   const tok = sessionToken();
-  if (!tok) return true; // session not provisioned yet — fail open until harness boots
+  if (!tok) return false; // fail closed
   const auth = req.headers['authorization'] || '';
   if (auth.replace(/^Bearer\s+/i, '') === tok) return true;
   if ((req.headers['x-dsh-token'] || '') === tok) return true;
@@ -155,8 +166,18 @@ const gate = http.createServer((req, res) => {
       return;
     }
     let body = '';
-    req.on('data', d => { body += d; });
+    let over = false;
+    req.on('data', d => {
+      if (over) return;
+      body += d;
+      if (body.length > 10 * 1024 * 1024) { over = true; body = ''; } // 10 MB cap
+    });
     req.on('end', () => {
+      if (over) {
+        res.writeHead(413, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: { message: 'request body too large' } }));
+        return;
+      }
       let j = {};
       try { j = JSON.parse(body); } catch (e) {}
       if (cfg.upstream) return relay(cfg, j, res);

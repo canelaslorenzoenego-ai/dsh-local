@@ -22,13 +22,13 @@ import {
   Zap,
 } from "lucide-react";
 
-const APK_VERSION = "v2.7.1";
+const APK_VERSION = "v2.7.2";
 // Primary: the GitHub Release asset (permanent, CDN-backed, works everywhere).
-// Fallback: the raw file on main. Both serve the same signed v2.7.1 APK.
+// Fallback: the raw file on main. Both serve the same signed v2.7.2 APK.
 const APK_FILE =
-  "https://github.com/canelaslorenzoenego-ai/dsh-local/releases/latest/download/dsh-local-v2.7.1.apk";
+  "https://github.com/canelaslorenzoenego-ai/dsh-local/releases/latest/download/dsh-local-v2.7.2.apk";
 const APK_FALLBACK =
-  "https://raw.githubusercontent.com/canelaslorenzoenego-ai/dsh-local/main/public/downloads/dsh-local-v2.7.1.apk";
+  "https://raw.githubusercontent.com/canelaslorenzoenego-ai/dsh-local/main/public/downloads/dsh-local-v2.7.2.apk";
 void APK_FALLBACK;
 
 const fadeUp = {
@@ -364,7 +364,7 @@ export default function Landing() {
           {[
             "Tokenized session links — the console opens only through the link, rotate anytime",
             "4 real dsh presets + a full Custom studio (profiles, import/export)",
-            "13 plugins, 9 skills, 8 MCPs, 8 integrations with per-tool wiring tests",
+            "13 plugins, 9 skills, 8 MCPs, 8 integrations — hardened against symlink escapes, oversized payloads, and token-less access (91-check test suite)",
             "Tool search and detail sheets for every capability",
             "PIN privacy, in-app or Chrome opening, foreground-service keepalive",
           ].map((li) => (

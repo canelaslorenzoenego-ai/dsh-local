@@ -7,7 +7,7 @@
 Embedded Linux · DeepSeek Harness console · OpenAI-compatible gateway · real terminal —
 all on `127.0.0.1`, all on-device, zero cloud, zero accounts.
 
-[![version](https://img.shields.io/badge/version-v2.7.1-4D6BFE)](#version-history)
+[![version](https://img.shields.io/badge/version-v2.7.2-4D6BFE)](#version-history)
 [![platform](https://img.shields.io/badge/platform-Android%208.0%2B%20ARM64-2FD575)](#requirements)
 [![tests](https://img.shields.io/badge/smoke%20tests-80%2F80%20%E2%9C%93-2FD575)](#testing)
 [![backend](https://img.shields.io/badge/backend-none%20·%20on--device-F5B942)](#the-web-page-in-this-repo)
@@ -45,7 +45,7 @@ workstation inside a single ~30 MB APK:
 
 ## Quick start
 
-1. **Download** [`public/downloads/dsh-local-v2.7.1.apk`](public/downloads/dsh-local-v2.7.1.apk)
+1. **Download** [`public/downloads/dsh-local-v2.7.2.apk`](public/downloads/dsh-local-v2.7.2.apk)
    (or grab it from the [website](https://canelaslorenzoenego-ai.github.io/dsh-local/))
    and sideload it (allow *install unknown apps* when prompted).
 2. **Open the app.** The embedded Linux extracts itself on first open (~30 s, one time)
@@ -309,7 +309,7 @@ The vault endpoint (`GET /api/secrets`) lists which ids are set — never values
 
 ```
 ├── apk/                              # the product: native Android source
-│   ├── AndroidManifest.xml           # com.dshlocal.app, targetSdk 28, v2.7.1
+│   ├── AndroidManifest.xml           # com.dshlocal.app, targetSdk 28, v2.7.2
 │   ├── build.sh                      # aapt2 → javac → d8 → zipalign → apksigner
 │   ├── src/com/dshlocal/app/
 │   │   ├── MainActivity.java         # dashboard, session-link card, PIN, WebView hosts
@@ -361,8 +361,13 @@ terminal token gate, path-traversal protection, and state persistence across
 restarts — plus the v2.7.0 systems end-to-end: the chat playground (gateway
 round-trip, history accumulation, listing, deletion), usage metering, the files
 manager (nested writes, read-back, traversal refusal in all three handlers), the
-event log (boot/chat/preset events, ack), and the secrets vault. **80 assertions,
-all green.**
+event log (boot/chat/preset events, ack), and the secrets vault. Since v2.7.2 it
+also runs an adversarial hardening suite: oversized request bodies (413 + server
+survives), symlink escapes refused in read/list/delete, >4 MB file reads refused,
+chat history hard-capped at 500 messages, malformed JSON handled, the chat relay
+presenting a bearer key when `gateway.json` requires one (and the gateway
+rejecting a wrong key), and the terminal failing closed without a token.
+**91 assertions, all green.**
 
 ### Screenshots
 
@@ -452,6 +457,7 @@ an inline error on the harness card; press Start to retry.
 | v2.6.0 | Session-token auth (dsh tokenized links), catalog 13/9/8/8, dashboard session card — 61/61 green |
 | **v2.7.0** | **Chat playground, files manager, usage analytics, activity feed, secrets vault, notification tap-through, in-app console — 80/80 green** |
 | v2.7.1 | **Device bugfix release: LD_LIBRARY_PATH exec fix, shebang repair, proxy self-installs node, crash diagnostics on the dashboard — 80/80 green** |
+| **v2.7.2** | **Hardening release: symlink-escape-proof workspace API, request-body caps, file-size caps, chat history cap, gateway apiKeys support in the chat relay, terminal polling backoff — 91/91 green** |
 
 ---
 
