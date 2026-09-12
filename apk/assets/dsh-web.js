@@ -260,6 +260,144 @@ function provisionStatus() {
   catch (e) { return { done: false, step: 'not started' }; }
 }
 
+// ---- events / notifications ---------------------------------------------------
+// Append-only event log powering the console's Activity feed and the native
+// notification tap-through. Every state change lands here.
+const EVENTS_FILE = path.join(DATA, 'events.json');
+const seenEvents = new Set();
+function pushEvent(type, title, detail, sev) {
+  try {
+    const key = type + '|' + title;
+    if (seenEvents.has(key)) return; // one per boot per key
+    seenEvents.add(key);
+    const list = readJson(EVENTS_FILE, []);
+    list.unshift({ id: crypto.randomBytes(5).toString('hex'), ts: Date.now(), type, title, detail: detail || '', sev: sev || 'info' });
+    fs.writeFileSync(EVENTS_FILE, JSON.stringify(list.slice(0, 200), null, 2));
+    try { fs.writeFileSync(path.join(DATA, 'event-live.json'), JSON.stringify({ type, title, detail: detail || '', sev: sev || 'info', ts: Date.now() })); } catch (e) {}
+  } catch (e) {}
+}
+function readJson(f, dflt) {
+  try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) { return dflt; }
+}
+
+// ---- secrets vault ------------------------------------------------------------
+// The 8 integration keys live here, file-backed and never returned in plaintext.
+// Readable on-device at $HOME/dsh-data/secrets.json (mode 0600) so the agent can
+// source them from the shell. /api/keys writes through to this store.
+const SECRETS = path.join(DATA, 'secrets.json');
+function secrets() {
+  const s = readJson(SECRETS, {});
+  if (!s.__created) {
+    s.__created = Date.now();
+    fs.writeFileSync(SECRETS, JSON.stringify(s, null, 2));
+    try { fs.chmodSync(SECRETS, 0o600); } catch (e) {}
+  }
+  return s;
+}
+function setSecret(id, val) {
+  const s = secrets();
+  s[id] = val;
+  fs.writeFileSync(SECRETS, JSON.stringify(s, null, 2));
+  try { fs.chmodSync(SECRETS, 0o600); } catch (e) {}
+}
+
+// ---- usage analytics -----------------------------------------------------------
+// A real OpenAI-compatible API, but every chat completion is metered.
+// Usage.ts aggregates per model + per tool; the console charts it.
+const USAGE_FILE = path.join(DATA, 'usage.json');
+function readUsage() {
+  const u = readJson(USAGE_FILE, { total: 0, byModel: {}, byTool: {} });
+  return u;
+}
+function bumpUsage(model, tool, msgs) {
+  const u = readUsage();
+  u.total += 1;
+  const m = u.byModel[model] || { calls: 0, messages: 0 };
+  m.calls += 1; m.messages += (msgs || 0);
+  u.byModel[model] = m;
+  const t = u.byTool[tool] || { calls: 0 };
+  t.calls += 1;
+  u.byTool[tool] = t;
+  fs.writeFileSync(USAGE_FILE, JSON.stringify(u, null, 2));
+  return u;
+}
+
+// ---- chat persistence ---------------------------------------------------------
+// Conversations stored app-private; every message is also an event.
+const CHATS_DIR = path.join(DATA, 'chats');
+fs.mkdirSync(CHATS_DIR, { recursive: true });
+function chatFile(id) { return path.join(CHATS_DIR, id.replace(/[^a-zA-Z0-9_-]/g, '') + '.json'); }
+function readChat(id) {
+  return readJson(chatFile(id), null);
+}
+function writeChat(c) {
+  c.updated = Date.now();
+  fs.writeFileSync(chatFile(c.id), JSON.stringify(c, null, 2));
+}
+function newChat(title) {
+  const c = {
+    id: 'c' + Date.now().toString(36) + crypto.randomBytes(2).toString('hex'),
+    title: (title || 'New chat').slice(0, 48),
+    messages: [],
+    created: Date.now(),
+  };
+  writeChat(c);
+  return c;
+}
+function chatSummary(c) { return { id: c.id, title: c.title, created: c.created, updated: c.updated, count: (c.messages || []).length }; }
+
+// ---- files manager ------------------------------------------------------------
+// Browsing is confined to the workspace root; symlink-aware, no traversal.
+const WORKSPACE = path.join(HOME, 'workspace');
+fs.mkdirSync(WORKSPACE, { recursive: true });
+function safePath(p) {
+  const real = path.resolve(p);
+  if (real !== WORKSPACE && !real.startsWith(WORKSPACE + path.sep)) return null;
+  return real;
+}
+function listFiles(dir) {
+  const real = safePath(dir || WORKSPACE);
+  if (!real) return null;
+  const out = [];
+  let names = [];
+  try { names = fs.readdirSync(real); } catch (e) { return null; }
+  for (const n of names) {
+    if (n === '.') continue;
+    const full = path.join(real, n);
+    let st;
+    try { st = fs.lstatSync(full); } catch (e) { continue; }
+    out.push({
+      name: n,
+      dir: st.isDirectory(),
+      size: st.size,
+      mtime: st.mtimeMs,
+      mode: '0' + (st.mode & 0o777).toString(8),
+      symlink: st.isSymbolicLink(),
+    });
+  }
+  out.sort((a, b) => (b.dir - a.dir) || a.name.localeCompare(b.name));
+  return { dir: real, entries: out };
+}
+function readWorkspaceFile(rel) {
+  const real = safePath(path.resolve(WORKSPACE, rel));
+  if (!real) return null;
+  try { return fs.readFileSync(real, 'utf8'); } catch (e) { return null; }
+}
+function writeWorkspaceFile(rel, content) {
+  const real = safePath(path.resolve(WORKSPACE, rel));
+  if (!real) return null;
+  try {
+    fs.mkdirSync(path.dirname(real), { recursive: true });
+    fs.writeFileSync(real, String(content));
+    return true;
+  } catch (e) { return null; }
+}
+function deleteWorkspacePath(rel) {
+  const real = safePath(path.resolve(WORKSPACE, rel));
+  if (!real || real === WORKSPACE) return false;
+  try { fs.rmSync(real, { recursive: true }); return true; } catch (e) { return false; }
+}
+
 // ---- server -----------------------------------------------------------------
 const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://x');
@@ -303,6 +441,8 @@ const server = http.createServer(async (req, res) => {
     for (const k of ['plugins', 'skills', 'mcps']) {
       counts[k] = Object.values(s[k] || {}).filter(v => v && v.enabled).length;
     }
+    const usage = readUsage();
+    const evs = readJson(EVENTS_FILE, []);
     const sess = getSession();
     json(res, 200, {
       node: process.version,
@@ -318,6 +458,8 @@ const server = http.createServer(async (req, res) => {
       provision: provisionStatus(),
       integrations: Object.keys(s.keys || {}).length,
       session: { protected: true, rotations: sess.rotations || 0, created: sess.created },
+      usage: { total: usage.total, models: Object.keys(usage.byModel).length },
+      events: evs.length,
     });
     return;
   }
@@ -358,6 +500,7 @@ const server = http.createServer(async (req, res) => {
     }
     s.preset = p.id;
     save(s);
+    pushEvent('preset', 'Preset applied: ' + p.name, p.tools + ' tools', 'info');
     return json(res, 200, { ok: true, preset: p.id, tools: toolset(s).length });
   }
 
@@ -463,6 +606,114 @@ const server = http.createServer(async (req, res) => {
 
   if (u.pathname === '/api/catalog') { json(res, 200, CATALOG); return; }
 
+  if (u.pathname === '/api/events') {
+    const evs = readJson(EVENTS_FILE, []);
+    return json(res, 200, { events: evs.slice(0, 60) });
+  }
+
+  if (u.pathname === '/api/events/ack' && req.method === 'POST') {
+    try { fs.writeFileSync(EVENTS_FILE, JSON.stringify([], null, 2)); } catch (e) {}
+    seenEvents.clear();
+    return json(res, 200, { ok: true });
+  }
+
+  // ---- chat playground ----
+  if (u.pathname === '/api/chats' && req.method === 'GET') {
+    const list = fs.readdirSync(CHATS_DIR).filter(f => f.endsWith('.json'))
+      .map(f => { try { return chatSummary(readJson(path.join(CHATS_DIR, f), null)); } catch (e) { return null; } })
+      .filter(Boolean)
+      .sort((a, b) => b.updated - a.updated);
+    return json(res, 200, { chats: list });
+  }
+  if (u.pathname === '/api/chats' && req.method === 'POST') {
+    const b = await body(req);
+    return json(res, 200, newChat(b.title));
+  }
+  if (u.pathname === '/api/chats/get' && req.method === 'POST') {
+    const b = await body(req);
+    const c = readChat(b.id);
+    if (!c) return json(res, 404, { error: 'no such chat' });
+    return json(res, 200, c);
+  }
+  if (u.pathname === '/api/chats/delete' && req.method === 'POST') {
+    const b = await body(req);
+    try { fs.rmSync(chatFile(b.id)); } catch (e) {}
+    return json(res, 200, { ok: true });
+  }
+  if (u.pathname === '/api/chat' && req.method === 'POST') {
+    const b = await body(req);
+    const text = String(b.message || '').slice(0, 8000);
+    if (!text.trim()) return json(res, 400, { error: 'message required' });
+    const c = b.chatId ? readChat(b.chatId) : null;
+    const chat = c || newChat(text.slice(0, 40));
+    const model = String(b.model || 'local-harness').slice(0, 80);
+    // same path the real OpenAI clients take
+    const gatewayRes = await new Promise((resolve) => {
+      const data = JSON.stringify({
+        model: model,
+        messages: (chat.messages || []).slice(-12).concat([{ role: 'user', content: text }]),
+        stream: false,
+      });
+      const rq = http.request({
+        host: '127.0.0.1', port: 8787, path: '/v1/chat/completions', method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
+      }, (up) => {
+        let buf = '';
+        up.on('data', (d) => { buf += d; });
+        up.on('end', () => { try { resolve(JSON.parse(buf)); } catch (e) { resolve(null); } });
+      });
+      rq.on('error', () => resolve(null));
+      rq.setTimeout(25000, () => { rq.destroy(); resolve(null); });
+      rq.write(data); rq.end();
+    });
+    const reply = (gatewayRes && gatewayRes.choices && gatewayRes.choices[0] && gatewayRes.choices[0].message.content)
+      || '(gateway offline — start the Proxy Gateway server and try again)';
+    chat.messages.push({ role: 'user', content: text, ts: Date.now() });
+    chat.messages.push({ role: 'assistant', content: reply, ts: Date.now(), model });
+    writeChat(chat);
+    bumpUsage(model, 'chat', 2);
+    pushEvent('chat', 'Chat: ' + chat.title, model + ' · ' + (gatewayRes ? 'gateway relay' : 'gateway offline'), 'info');
+    return json(res, 200, { chat, reply });
+  }
+
+  // ---- files manager ----
+  if (u.pathname === '/api/files' && req.method === 'GET') {
+    const rel = u.searchParams.get('dir') || '';
+    const target = rel ? path.join(WORKSPACE, rel) : WORKSPACE;
+    const listing = listFiles(target);
+    if (!listing) return json(res, 404, { error: 'no such directory' });
+    return json(res, 200, {
+      root: WORKSPACE,
+      cwd: rel || '.',
+      entries: listing.entries,
+    });
+  }
+  if (u.pathname === '/api/files/read' && req.method === 'GET') {
+    const rel = u.searchParams.get('path') || '';
+    const content = rel ? readWorkspaceFile(rel) : null;
+    if (content === null) return json(res, 404, { error: 'not found or outside workspace' });
+    return json(res, 200, { path: rel, content });
+  }
+  if (u.pathname === '/api/files/write' && req.method === 'POST') {
+    const b = await body(req);
+    const r = writeWorkspaceFile(b.path, b.content);
+    if (!r) return json(res, 403, { error: 'write refused' });
+    pushEvent('file', 'File saved: ' + b.path, '', 'info');
+    return json(res, 200, { ok: true });
+  }
+  if (u.pathname === '/api/files/delete' && req.method === 'POST') {
+    const b = await body(req);
+    const r = deleteWorkspacePath(b.path);
+    if (!r) return json(res, 403, { error: 'refused' });
+    pushEvent('file', 'File deleted: ' + b.path, '', 'warn');
+    return json(res, 200, { ok: true });
+  }
+  if (u.pathname === '/api/secrets' && req.method === 'GET') {
+    const s = secrets();
+    const ids = Object.keys(s).filter(k => k !== '__created');
+    return json(res, 200, { ids, file: SECRETS.replace(HOME, '$HOME') });
+  }
+
   if (u.pathname === '/api/tool' && req.method === 'GET') {
     const type = u.searchParams.get('type');
     const id = u.searchParams.get('id');
@@ -483,6 +734,10 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (u.pathname === '/api/installed') { json(res, 200, store()); return; }
+
+  if (u.pathname === '/api/usage' && req.method === 'GET') {
+    return json(res, 200, readUsage());
+  }
 
   if (u.pathname === '/api/install' && req.method === 'POST') {
     const b = await body(req);
@@ -511,7 +766,9 @@ const server = http.createServer(async (req, res) => {
     const s = store();
     s.keys = s.keys || {};
     s.keys[b.integration] = { set: true, len: String(b.key).length, since: Date.now() };
+    setSecret(b.integration, String(b.key));
     save(s);
+    pushEvent('key', 'API key stored: ' + b.integration, '', 'info');
     return json(res, 200, { ok: true, integration: b.integration });
   }
 
@@ -549,4 +806,5 @@ server.listen(PORT, '127.0.0.1', () => {
   const s = getSession();
   console.log('dsh console on 127.0.0.1:' + PORT);
   console.log('session link: ' + sessionLink(s.token));
+  pushEvent('boot', 'Harness online', 'console + api on 127.0.0.1:3080', 'ok');
 });

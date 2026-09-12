@@ -39,6 +39,7 @@ import java.io.FileInputStream;
 import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 /**
@@ -77,6 +78,7 @@ public class MainActivity extends Activity {
     private String cachedLink = null;
     private String cachedToken = null;
     private String terminalTokenLoaded = null;
+    private String statusSubTagH = null;
 
     private final Runnable poll = new Runnable() {
         @Override public void run() {
@@ -92,9 +94,16 @@ public class MainActivity extends Activity {
                 final String pState = readStatus("proxy");
                 final String link = hUp ? fetchSessionLink() : null;
                 handler.post(() -> {
+                    final String toolCount = hUp ? fetchToolCount() : null;
                     applyServer("harness", hUp, hState, wantHarness, hMs,
                             statusDotH, statusTextH, statusSubH, btnHarness, btnOpenH,
                             "dsh · DeepSeek Harness", "http://127.0.0.1:3080");
+                    if (hUp && toolCount != null && !toolCount.equals(statusSubTagH)) {
+                        statusSubTagH = toolCount;
+                        statusSubH.setText("dsh · DeepSeek Harness · " + toolCount + " tools live");
+                    } else if (!hUp) {
+                        statusSubTagH = null;
+                    }
                     applyServer("proxy", pUp, pState, wantProxy, pMs,
                             statusDotP, statusTextP, statusSubP, btnProxy, btnOpenP,
                             "gateway + terminal", "http://127.0.0.1:8787");
@@ -236,6 +245,27 @@ public class MainActivity extends Activity {
                 }
             });
         }).start();
+    }
+
+    /** Live toolset size for the harness card subtitle. */
+    private String fetchToolCount() {
+        try {
+            java.net.HttpURLConnection c = (java.net.HttpURLConnection)
+                    new java.net.URL("http://127.0.0.1:" + HARNESS_PORT + "/api/status?token="
+                            + (cachedToken == null ? "" : cachedToken)).openConnection();
+            c.setConnectTimeout(900);
+            c.setReadTimeout(900);
+            if (c.getResponseCode() != 200) return null;
+            ByteArrayOutputStream bo = new ByteArrayOutputStream();
+            try (InputStream in = c.getInputStream()) {
+                byte[] b = new byte[2048];
+                int n;
+                while ((n = in.read(b)) > 0) bo.write(b, 0, n);
+            }
+            return String.valueOf(new JSONObject(bo.toString("UTF-8")).optInt("tools", -1));
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /** Read the session link straight from the harness API (like the console URL dsh prints). */
@@ -382,8 +412,15 @@ public class MainActivity extends Activity {
             return;
         }
         String action;
-        if ("harness".equals(which)) { action = ServerService.ACTION_START_HARNESS; wantHarness = true; }
-        else { action = ServerService.ACTION_START_PROXY; wantProxy = true; }
+        if ("harness".equals(which)) {
+            action = ServerService.ACTION_START_HARNESS;
+            wantHarness = true;
+            ServerService.setTapIntent(this, ServerService.TAP_OPEN_CONSOLE);
+        } else {
+            action = ServerService.ACTION_START_PROXY;
+            wantProxy = true;
+            ServerService.setTapIntent(this, ServerService.TAP_OPEN_TERMINAL);
+        }
         startService(new Intent(this, ServerService.class).setAction(action));
         toast(("harness".equals(which) ? "Harness" : "Proxy") + " starting…");
     }
@@ -457,9 +494,31 @@ public class MainActivity extends Activity {
             final String link = l;
             runOnUiThread(() -> {
                 if (!up) { toast("Harness not online yet — press Start first"); return; }
-                openUrl(link, "console");
+                if (Prefs.openInApp(this)) openConsoleInApp();
+                else openUrl(link, "console");
             });
         }).start();
+    }
+
+    /** Full-screen in-app console with the token injected (no browser hop). */
+    private void openConsoleInApp() {
+        WebView web = new WebView(this);
+        web.setBackgroundColor(Color.parseColor("#0B0E14"));
+        WebSettings s = web.getSettings();
+        s.setJavaScriptEnabled(true);
+        s.setDomStorageEnabled(true);
+        web.setWebViewClient(new LocalAssetWebViewClient());
+        web.loadUrl("http://127.0.0.1:" + HARNESS_PORT + "/#token="
+                + (cachedToken == null ? "" : cachedToken));
+        AlertDialog dlg = new AlertDialog.Builder(this, android.R.style.Theme_Material_NoActionBar)
+                .setTitle("DSH Console")
+                .setView(web)
+                .setPositiveButton("Close", null)
+                .create();
+        dlg.show();
+        dlg.getWindow().setLayout(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+        dlg.setOnDismissListener(d -> web.destroy());
     }
 
     private void openTerminal() {
@@ -606,5 +665,11 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         handler.post(poll);
+        // Notification tap should land where the user expects (console or terminal)
+        if (ServerService.TAP_OPEN_TERMINAL.equals(ServerService.getTapIntent(this))
+                && isUp(TERM_PORT) && flipper.getDisplayedChild() != 1) {
+            setTab(1);
+            ensureTerminal();
+        }
     }
 }

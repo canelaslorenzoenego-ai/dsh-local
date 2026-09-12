@@ -7,9 +7,9 @@
 Embedded Linux · DeepSeek Harness console · OpenAI-compatible gateway · real terminal —
 all on `127.0.0.1`, all on-device, zero cloud, zero accounts.
 
-[![version](https://img.shields.io/badge/version-v2.6.0-4D6BFE)](#version-history)
+[![version](https://img.shields.io/badge/version-v2.7.0-4D6BFE)](#version-history)
 [![platform](https://img.shields.io/badge/platform-Android%208.0%2B%20ARM64-2FD575)](#requirements)
-[![tests](https://img.shields.io/badge/smoke%20tests-61%2F61%20%E2%9C%93-2FD575)](#testing)
+[![tests](https://img.shields.io/badge/smoke%20tests-80%2F80%20%E2%9C%93-2FD575)](#testing)
 [![backend](https://img.shields.io/badge/backend-none%20·%20on--device-F5B942)](#the-web-page-in-this-repo)
 [![license](https://img.shields.io/badge/license-unlicensed--private-8B96AC)]()
 
@@ -37,9 +37,13 @@ workstation inside a single ~30 MB APK:
 > Everything listens on loopback only. Nothing leaves the device except the
 > outbound calls *you* configure (model APIs, git remotes, web fetches).
 
+| Native dashboard | dsh web console |
+|---|---|
+| ![Native dashboard](docs/screenshot-dashboard.png) | ![dsh web console](docs/screenshot-console.png) |
+
 ## Quick start
 
-1. **Download** [`public/downloads/dsh-local-v2.6.0.apk`](public/downloads/dsh-local-v2.6.0.apk)
+1. **Download** [`public/downloads/dsh-local-v2.7.0.apk`](public/downloads/dsh-local-v2.7.0.apk)
    and sideload it (allow *install unknown apps* when prompted).
 2. **Open the app.** The embedded Linux extracts itself on first open (~30 s, one time)
    with live progress on the harness card.
@@ -49,6 +53,8 @@ workstation inside a single ~30 MB APK:
 4. **Tap Open** — the console launches in-app or in Chrome. Only the tokenized link
    opens it.
 5. *(Optional)* Tap **Start** on the Proxy Gateway for the model gateway + terminal.
+6. **Chat with a model** from the console's Chat tab — every completion is metered
+   into the usage dashboard, and both servers log to the Activity feed.
 
 | | |
 |---|---|
@@ -87,6 +93,9 @@ flowchart LR
 | `3080` | Harness console (SPA + REST API) | session token required |
 | `8787` | OpenAI-compatible gateway | optional API keys (`gateway.json`) |
 | `8788` | Terminal (xterm.js) | shared session token required |
+
+The two servers also talk to each other: the console's chat playground calls the
+gateway over loopback, and both write into one shared event log + usage ledger.
 
 ## The session-token model (real `dsh web` behavior)
 
@@ -142,6 +151,42 @@ A complete management SPA for the harness, file-backed in `$HOME/dsh-data/state.
 - When the real `dsh` core is installable on-device, `setup.sh` also attaches it on
   `:3081` alongside the console.
 
+### Chat playground
+
+A built-in chat client that calls your own gateway over loopback (`/api/chat`):
+
+- Persistent, named conversations — create, switch, delete; history is stored
+  app-private in `$HOME/dsh-data/chats/` and survives restarts
+- Sliding 12-message window sent per completion, model badge on every reply
+- Enter to send, Shift+Enter for newline, typing indicator, optimistic user bubbles
+- Works in **echo mode** with zero configuration, or against any real backend you
+  point `gateway.json` at — the same path external OpenAI clients take
+
+### Files manager
+
+A workspace browser confined to `~/workspace` (the agent's own root):
+
+- Breadcrumb navigation, folder/file icons, symlink marks, sizes, sorted dirs-first
+- Tap to view/edit any text file in a monospace editor; save or delete
+- Server-side **path traversal protection**: every read/write resolves inside the
+  workspace root — `../` escapes and symlinks out are refused (covered by tests)
+
+### Usage analytics
+
+Every completion through the gateway is metered into `$HOME/dsh-data/usage.json`:
+
+- Calls and messages **per model** (the Overview card renders a bar chart)
+- Calls **per tool** (chat today; agent tool calls land in the same ledger)
+- Totals surface in `/api/status` so the dashboard and console agree
+
+### Activity feed
+
+An append-only event log (`$HOME/dsh-data/events.json`, newest first, 200 kept)
+that records what the stack did without being asked: harness boots, preset applies,
+key stores, file saves/deletes, chat turns — each with a severity dot and relative
+timestamp. `POST /api/events/ack` clears it (and resets per-boot dedup so repeat
+actions log again).
+
 ## Gateway configuration (`:8787`)
 
 Point the gateway at any OpenAI-compatible backend (or run it in local echo mode)
@@ -161,6 +206,19 @@ by editing `~/gateway.json` from the Terminal tab:
 - `models` — advertise a custom `/v1/models` list
 - no `upstream` → local echo mode (wiring tests)
 
+### Secrets vault
+
+Integration keys are written twice: masked into `state.json` for the UI, and in
+plaintext to `$HOME/dsh-data/secrets.json` (**mode 0600**, app-private) so *the
+agent itself* can use them:
+
+```bash
+# in the Terminal tab
+export DEEPSEEK_API_KEY=$(node -p "require('os').homedir() + '/dsh-data/secrets.json'" | xargs cat | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>console.log(JSON.parse(d).deepseek||''))")
+```
+
+The vault endpoint (`GET /api/secrets`) lists which ids are set — never values.
+
 ## Security model
 
 - **Loopback only** — every listener binds to `127.0.0.1`. LAN/internet exposure is
@@ -169,7 +227,10 @@ by editing `~/gateway.json` from the Terminal tab:
 - **PIN lock** — optional 4+ digit PIN at launch; `FLAG_SECURE` blocks screenshots
   and recents thumbnails while locked. Stored in app-private prefs only.
 - **Keys stay on-device** — integration keys are stored masked in `state.json`;
-  plaintext never round-trips through the API.
+  plaintext never round-trips through the API. The optional secrets vault file is
+  `0600` app-private, readable only by the embedded Linux user the agent runs as.
+- **Workspace confinement** — the files manager resolves every path against the
+  workspace root; traversal and symlink escapes are refused and tested.
 - **targetSdk 28** — deliberate, same as Termux F-Droid: it bypasses Android 10+'s
   W^X restriction so the embedded Linux can execute from app-private storage.
 - **No telemetry, no accounts, no cloud** — the app has nothing to phone home *to*.
@@ -178,7 +239,7 @@ by editing `~/gateway.json` from the Terminal tab:
 
 ```
 ├── apk/                              # the product: native Android source
-│   ├── AndroidManifest.xml           # com.dshlocal.app, targetSdk 28, v2.6.0
+│   ├── AndroidManifest.xml           # com.dshlocal.app, targetSdk 28, v2.7.0
 │   ├── build.sh                      # aapt2 → javac → d8 → zipalign → apksigner
 │   ├── src/com/dshlocal/app/
 │   │   ├── MainActivity.java         # dashboard, session-link card, PIN, WebView hosts
@@ -192,9 +253,12 @@ by editing `~/gateway.json` from the Terminal tab:
 │   │   ├── setup.sh / provision.sh   # node install + toolchain provisioning
 │   │   └── web/                      # console SPA + terminal (xterm.js)
 │   ├── res/                          # layouts, drawables, animations
-│   └── test/smoke.cjs                # 61-assertion end-to-end server test
+│   └── test/smoke.cjs                # 80-assertion end-to-end server test
+├── docs/                             # rendered product screenshots (PNG)
 ├── public/downloads/                 # signed release APK (served by the web page)
-├── scripts/publish-to-github.cjs     # push this repo via the GitHub REST API
+├── scripts/
+│   ├── publish-to-github.cjs         # push this repo via the GitHub REST API
+│   └── screenshot.cjs                # dependency-free renderer for docs/*.png
 └── src/                              # single static product/download page (Vite+React)
 ```
 
@@ -224,7 +288,22 @@ in `apk/AndroidManifest.xml` to cut a new release, then copy the artifact into
 (exchange, rotate, old-token rejection, restart persistence), preset atomicity and
 validation, custom studio + profiles, masked key storage, gateway chat + SSE,
 terminal token gate, path-traversal protection, and state persistence across
-restarts. **61 assertions, all green.**
+restarts — plus the v2.7.0 systems end-to-end: the chat playground (gateway
+round-trip, history accumulation, listing, deletion), usage metering, the files
+manager (nested writes, read-back, traversal refusal in all three handlers), the
+event log (boot/chat/preset events, ack), and the secrets vault. **80 assertions,
+all green.**
+
+### Screenshots
+
+`docs/*.png` are rendered by `scripts/screenshot.cjs` — a dependency-free
+bitmap-font rasterizer + PNG encoder that draws the real palette and layout of the
+native dashboard and the console, then **pixel-samples its own output** and fails
+if any landmark drifts. Regenerate after UI changes:
+
+```bash
+node scripts/screenshot.cjs
+```
 
 ## The web page in this repo
 
@@ -288,7 +367,8 @@ an inline error on the harness card; press Start to retry.
 | v2.3.1 | dsh's real presets (Standard / PTC / Minimal / Creator) |
 | v2.4.0 | Custom preset studio + provisioned container |
 | v2.5.1 | Animations, tool search/info, 43/43 smoke test green |
-| **v2.6.0** | **Session-token auth (dsh tokenized links), catalog 13/9/8/8, dashboard session card — 61/61 green** |
+| v2.6.0 | Session-token auth (dsh tokenized links), catalog 13/9/8/8, dashboard session card — 61/61 green |
+| **v2.7.0** | **Chat playground, files manager, usage analytics, activity feed, secrets vault, notification tap-through, in-app console — 80/80 green** |
 
 ---
 

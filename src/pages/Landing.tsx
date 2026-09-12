@@ -22,7 +22,7 @@ import {
   Zap,
 } from "lucide-react";
 
-const APK_VERSION = "v2.6.0";
+const APK_VERSION = "v2.7.0";
 const APK_FILE = `/downloads/dsh-local-${APK_VERSION}.apk`;
 
 const fadeUp = {

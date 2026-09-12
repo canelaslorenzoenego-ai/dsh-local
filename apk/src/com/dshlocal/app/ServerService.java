@@ -25,6 +25,22 @@ public class ServerService extends Service {
     static final String ACTION_START_PROXY = "com.dshlocal.app.START_PROXY";
     static final String ACTION_STOP_PROXY = "com.dshlocal.app.STOP_PROXY";
 
+    /** Where the notification tap should land when the user opens the app. */
+    static final String TAP_OPEN_CONSOLE = "console";
+    static final String TAP_OPEN_TERMINAL = "terminal";
+    private static final String PREF_TAP = "notification_tap";
+
+    /** Remember which surface the notification should open (called by MainActivity). */
+    static void setTapIntent(Context ctx, String tap) {
+        ctx.getSharedPreferences("dsh_prefs", Context.MODE_PRIVATE)
+                .edit().putString(PREF_TAP, tap).apply();
+    }
+
+    static String getTapIntent(Context ctx) {
+        return ctx.getSharedPreferences("dsh_prefs", Context.MODE_PRIVATE)
+                .getString(PREF_TAP, TAP_OPEN_CONSOLE);
+    }
+
     private static final String CHANNEL = "dsh_servers";
 
     private Process harnessProc;
@@ -37,10 +53,17 @@ public class ServerService extends Service {
         NotificationChannel ch = new NotificationChannel(CHANNEL, "DSH servers",
                 NotificationManager.IMPORTANCE_LOW);
         nm.createNotificationChannel(ch);
-        startForeground(1, buildNotification("DSH Local · servers"));
+        startForeground(1, buildNotification());
     }
 
-    private Notification buildNotification(String text) {
+    /** Notification reflects what's actually running; tap lands on the last-started surface. */
+    private Notification buildNotification() {
+        boolean h = harnessProc != null, p = proxyProc != null;
+        String text;
+        if (h && p) text = "Harness :3080 · Gateway :8787 online — tap to open";
+        else if (h) text = "Harness :3080 online — tap to open the console";
+        else if (p) text = "Gateway :8787 + terminal :8788 online — tap to open";
+        else text = "Starting servers…";
         Notification.Builder b;
         if (android.os.Build.VERSION.SDK_INT >= 26) {
             b = new Notification.Builder(this, CHANNEL);
@@ -60,6 +83,7 @@ public class ServerService extends Service {
         else if (ACTION_START_PROXY.equals(action)) ensureRuntime();
         else if (ACTION_START_PROXY.equals(action)) startProxy();
         else if (ACTION_STOP_PROXY.equals(action)) stopProc("proxy");
+        startForeground(1, buildNotification());
         if (harnessProc == null && proxyProc == null) {
             stopForeground(true);
             stopSelf();

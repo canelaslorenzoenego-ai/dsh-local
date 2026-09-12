@@ -25,6 +25,9 @@ case "$1" in
     fi
     node -v
     touch $HOME/.dsh-node-ok
+    mkdir -p $HOME/dsh-data
+    printf '{"type":"boot","title":"Harness booting","detail":"Node %%s ready, console starting","sev":"info","ts":%s}' \
+      $(date +%%s)000 $(node -v) > $HOME/dsh-data/event-live.json 2>/dev/null
     echo "[setup] dsh console (plugins/skills/mcps/integrations) on 127.0.0.1:3080"
     if command -v npx >/dev/null 2>&1; then
       echo "[setup] attaching real dsh core on :3081 if available…"

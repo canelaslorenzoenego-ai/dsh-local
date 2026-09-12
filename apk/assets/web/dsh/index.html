@@ -111,6 +111,58 @@ input.num{width:90px;text-align:center}
 .flash{position:fixed;inset:0;background:rgba(47,213,117,.14);z-index:40;pointer-events:none;
   opacity:0;transition:opacity .3s}
 .flash.show{opacity:1}
+/* ---- chat ---- */
+.chatbox{display:flex;flex-direction:column;height:calc(100vh - 320px);min-height:340px}
+.msgs{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:4px 2px}
+.msg{max-width:86%;padding:10px 13px;border-radius:14px;font-size:13px;line-height:1.55;
+  white-space:pre-wrap;word-break:break-word}
+.msg.user{align-self:flex-end;background:linear-gradient(135deg,#3D55D8,#4D6BFE);color:#fff;
+  border-bottom-right-radius:4px}
+.msg.bot{align-self:flex-start;background:var(--surface2);border:1px solid var(--stroke);
+  border-bottom-left-radius:4px}
+.msg .who{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:4px}
+.msg.user .who{color:rgba(255,255,255,.65)}
+.composer{display:flex;gap:8px;padding-top:10px;border-top:1px solid var(--stroke);margin-top:10px}
+.composer textarea{flex:1;background:var(--surface2);border:1px solid var(--stroke);border-radius:12px;
+  color:var(--text);font-size:13px;padding:11px 12px;resize:none;min-height:44px;max-height:110px;font-family:inherit}
+.composer textarea:focus{outline:none;border-color:var(--accent)}
+.chatside{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+.chatside select{margin-top:0;flex:1;min-width:140px}
+.typing{color:var(--muted);font-size:12px;padding:8px 2px;display:none}
+.typing.show{display:block}
+.typing .dot{animation:blink 1.2s infinite;display:inline-block}
+.typing .dot:nth-child(2){animation-delay:.2s}
+.typing .dot:nth-child(3){animation-delay:.4s}
+@keyframes blink{0%,80%,100%{opacity:.2}40%{opacity:1}}
+/* ---- files ---- */
+.crumbs{display:flex;align-items:center;gap:2px;flex-wrap:wrap;margin-bottom:10px;font-size:12px;color:var(--muted)}
+.crumbs button{background:none;border:none;color:var(--accent2);cursor:pointer;font-size:12px;padding:2px 4px}
+.crumbs .sep{color:var(--stroke)}
+.frow{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--stroke);cursor:pointer}
+.frow:last-child{border-bottom:none}
+.frow:active{background:var(--surface2)}
+.frow .ico{font-size:16px;width:22px;text-align:center}
+.frow .nm{flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.frow .sz{font-size:11px;color:var(--muted)}
+.frow .del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:4px}
+.fview{background:#0D1119;border:1px solid var(--stroke);border-radius:10px;padding:12px;
+  font-family:ui-monospace,monospace;font-size:11.5px;line-height:1.55;color:#C9D4EE;
+  white-space:pre-wrap;word-break:break-word;max-height:52vh;overflow-y:auto}
+.evt{display:flex;gap:10px;padding:9px 2px;border-bottom:1px solid var(--stroke);font-size:12px}
+.evt:last-child{border-bottom:none}
+.evt .edot{width:8px;height:8px;border-radius:50%;margin-top:5px;flex-shrink:0}
+.evt .edot.ok{background:var(--green)}
+.evt .edot.info{background:var(--accent)}
+.evt .edot.warn{background:var(--amber)}
+.evt .ettl{color:var(--text);font-weight:600}
+.evt .edet{color:var(--muted);font-size:11px;margin-top:1px}
+.evt .ets{margin-left:auto;color:var(--muted);font-size:10.5px;flex-shrink:0}
+.bars{display:flex;align-items:flex-end;gap:6px;height:64px;margin-top:10px}
+.bars .bar{flex:1;background:linear-gradient(180deg,var(--accent2),var(--accent));border-radius:4px 4px 0 0;
+  min-height:3px;position:relative}
+.bars .bar span{position:absolute;bottom:-16px;left:50%;transform:translateX(-50%);
+  font-size:9px;color:var(--muted);white-space:nowrap}
+.barswrap{padding-bottom:18px}
 
 </style>
 </head>
@@ -148,6 +200,8 @@ input.num{width:90px;text-align:center}
   <nav id="nav">
     <button data-t="presets" class="on">Presets</button>
     <button data-t="overview">Overview</button>
+    <button data-t="chat">Chat</button>
+    <button data-t="files">Files</button>
     <button data-t="plugins">Plugins</button>
     <button data-t="skills">Skills</button>
     <button data-t="mcps">MCPs</button>
@@ -156,6 +210,8 @@ input.num{width:90px;text-align:center}
 
   <section id="presets" class="on"></section>
   <section id="overview"></section>
+  <section id="chat"></section>
+  <section id="files"></section>
   <section id="plugins"></section>
   <section id="skills"></section>
   <section id="mcps"></section>
@@ -260,6 +316,20 @@ function renderOverview(){
   const s = S.status, n = S.installed;
   const cnt = k => Object.values(n[k]||{}).filter(v=>v&&v.enabled).length;
   const con = Object.keys(n.keys||{}).length;
+  const u = S.usage || { total: 0, byModel: {} };
+  const evs = (S.events && S.events.events) || [];
+  const models = Object.keys(u.byModel || {});
+  const maxCalls = Math.max(1, ...models.map(m => u.byModel[m].calls));
+  const bars = models.length ? models.slice(0, 6).map(m =>
+    `<div class="bar" style="height:${Math.max(4, Math.round(u.byModel[m].calls / maxCalls * 100))}%"><span>${esc(m)}</span></div>`
+  ).join('') : '<div class="empty" style="padding:14px 0">No model calls yet — try the Chat tab.</div>';
+  const evHtml = evs.length ? evs.slice(0, 12).map(e => `
+    <div class="evt">
+      <span class="edot ${e.sev||'info'}"></span>
+      <span style="flex:1"><span class="ettl">${esc(e.title)}</span>
+        ${e.detail?`<div class="edet">${esc(e.detail)}</div>`:''}</span>
+      <span class="ets">${ago(e.ts)}</span>
+    </div>`).join('') : '<div class="empty" style="padding:14px 0">Quiet so far.</div>';
   $('overview').innerHTML = `
     <div class="grid">
       <div class="stat"><div class="l">Preset</div><div class="v">${s.preset}</div></div>
@@ -271,6 +341,18 @@ function renderOverview(){
       <div class="stat"><div class="l">MCPs</div><div class="v">${cnt('mcps')} active</div></div>
       <div class="stat"><div class="l">Gateway</div><div class="v mono">:8787 ${s.gateway?'up':'down'}</div></div>
     </div>
+    <div class="card barswrap" style="margin-top:12px">
+      <h3>📊 Model usage</h3>
+      <p>${u.total} completion${u.total===1?'':'s'} metered · ${models.length} model${models.length===1?'':'s'} used</p>
+      <div class="bars">${bars}</div>
+    </div>
+    <div class="card" style="margin-top:12px">
+      <div class="row" style="margin-top:0">
+        <h3>🔔 Activity</h3>
+        <button class="btn ghost" onclick="ackEvents()">Clear</button>
+      </div>
+      ${evHtml}
+    </div>
     <div class="card" style="margin-top:12px">
       <h3>🧩 How this fits together</h3>
       <p>The harness serves its agent API on <span class="mono">127.0.0.1:3080</span> and consumes
@@ -279,6 +361,20 @@ function renderOverview(){
       Integrations. Pick a preset to shape the model's toolset: plugins give it tools,
       skills shape its behavior, MCPs add external context servers.</p>
     </div>`;
+}
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function ago(ts){
+  if (!ts) return '';
+  const d = Date.now() - ts;
+  if (d < 60000) return 'just now';
+  if (d < 3600000) return Math.floor(d/60000) + 'm ago';
+  if (d < 86400000) return Math.floor(d/3600000) + 'h ago';
+  return Math.floor(d/86400000) + 'd ago';
+}
+async function ackEvents(){
+  await post('/api/events/ack', {});
+  toast('Activity cleared');
+  await refresh();
 }
 function isOn(type, id){
   const v = (S.installed[type]||{})[id];
@@ -564,9 +660,13 @@ async function saveCustom(){
 
 // ---- actions ----
 async function refresh(){
-  [S.status, S.catalog, S.installed, S.presets] = await Promise.all([
-    api('/api/status'), api('/api/catalog'), api('/api/installed'), api('/api/presets')]);
+  [S.status, S.catalog, S.installed, S.presets, S.usage, S.events] = await Promise.all([
+    api('/api/status'), api('/api/catalog'), api('/api/installed'), api('/api/presets'),
+    api('/api/usage'), api('/api/events')]);
   renderAll();
+  await loadChats();
+  renderChatShell();
+  await renderFiles();
 }
 async function toggleOne(type, id){
   const on = isOn(type, id);
@@ -585,6 +685,174 @@ async function saveKey(id){
   el.value = '';
   toast('Key stored on-device');
   await refresh();
+}
+
+// ---- chat playground ----
+S.chat = { chats: [], current: null, busy: false, model: 'local-harness' };
+function renderChatShell(){
+  const opts = S.chat.chats.map(c =>
+    `<option value="${c.id}" ${S.chat.current && S.chat.current.id===c.id?'selected':''}>${esc(c.title)} (${c.count})</option>`).join('');
+  $('chat').innerHTML = `
+    <div class="chatside">
+      <select id="chatSel" onchange="openChat(this.value)">
+        <option value="">${S.chat.chats.length ? 'Switch conversation…' : 'No conversations yet'}</option>
+        ${opts}
+      </select>
+      <button class="btn ghost" onclick="newChatBtn()">＋ New</button>
+      <button class="btn ghost" ${S.chat.current?'':'disabled'} onclick="delChat()">🗑</button>
+    </div>
+    <div class="card" style="margin-bottom:0">
+      <div class="chatbox">
+        <div class="msgs" id="msgs"></div>
+        <div class="typing" id="typing">model is thinking <span class="dot">•</span><span class="dot">•</span><span class="dot">•</span></div>
+        <div class="composer">
+          <textarea id="chatIn" placeholder="Message the model… (Enter to send, Shift+Enter for newline)"></textarea>
+          <button class="btn primary" id="chatSend" onclick="sendChat()">Send</button>
+        </div>
+      </div>
+    </div>
+    <div class="hint" style="margin-top:8px">Requests go through your gateway (127.0.0.1:8787) — point
+    <span class="mono">gateway.json</span> at any OpenAI-compatible backend, or run echo mode for wiring tests.</div>`;
+  const ta = $('chatIn');
+  ta.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
+  });
+  renderMsgs();
+}
+function renderMsgs(){
+  const box = $('msgs');
+  if (!box) return;
+  const c = S.chat.current;
+  box.innerHTML = (c && c.messages && c.messages.length)
+    ? c.messages.map(m => `
+      <div class="msg ${m.role==='user'?'user':'bot'}">
+        <div class="who">${m.role==='user'?'you':esc(m.model||'model')}</div>
+        ${esc(m.content)}
+      </div>`).join('')
+    : '<div class="empty">Say hello — completions are metered into 📊 usage on Overview.</div>';
+  box.scrollTop = box.scrollHeight;
+}
+async function loadChats(){
+  const r = await api('/api/chats');
+  S.chat.chats = r.chats || [];
+}
+async function openChat(id){
+  if (!id) return;
+  const c = await post('/api/chats/get', { id });
+  S.chat.current = c;
+  renderChatShell();
+}
+async function newChatBtn(){
+  S.chat.current = await post('/api/chats', { title: 'New chat' });
+  await loadChats();
+  renderChatShell();
+  $('chatIn').focus();
+}
+async function delChat(){
+  if (!S.chat.current) return;
+  await post('/api/chats/delete', { id: S.chat.current.id });
+  S.chat.current = null;
+  await loadChats();
+  renderChatShell();
+  toast('Conversation deleted');
+}
+async function sendChat(){
+  if (S.chat.busy) return;
+  const ta = $('chatIn');
+  const text = ta.value.trim();
+  if (!text) return;
+  S.chat.busy = true;
+  const sendBtn = $('chatSend');
+  sendBtn.disabled = true; sendBtn.style.opacity = .5;
+  $('typing').classList.add('show');
+  ta.value = '';
+  if (!S.chat.current) { S.chat.current = { id: null, messages: [], title: text.slice(0, 40) }; }
+  S.chat.current.messages.push({ role: 'user', content: text, ts: Date.now() });
+  renderMsgs();
+  try {
+    const r = await post('/api/chat', {
+      chatId: S.chat.current.id || undefined,
+      message: text,
+      model: S.chat.model || 'local-harness',
+    });
+    S.chat.current = r.chat;
+    if (!S.chat.chats.find(c => c.id === r.chat.id)) await loadChats();
+    renderChatShell();
+  } catch (e) {
+    S.chat.current.messages.push({ role: 'assistant', content: '(failed: ' + e.message + ')' });
+    renderMsgs();
+  }
+  $('typing').classList.remove('show');
+  S.chat.busy = false;
+  const btn = $('chatSend'); if (btn) { btn.disabled = false; btn.style.opacity = 1; }
+  const box = $('msgs'); if (box) box.scrollTop = box.scrollHeight;
+}
+
+// ---- files manager ----
+S.files = { cwd: '', editPath: null, editContent: null, entries: [] };
+async function renderFiles(){
+  let r;
+  try {
+    r = await api('/api/files' + (S.files.cwd ? '?dir=' + encodeURIComponent(S.files.cwd) : ''));
+  } catch (e) { return; }
+  const parts = (S.files.cwd || '').split('/').filter(Boolean);
+  const crumbs = ['<button onclick="filesCd(\'\')">workspace</button>']
+    .concat(parts.map((p, i) =>
+      `<span class="sep">/</span><button onclick="filesCd('${parts.slice(0, i+1).join('/')}')">${esc(p)}</button>`));
+  S.files.entries = r.entries || [];
+  const rows = r.entries.map((e, i) => `
+    <div class="frow" onclick="fileOpen(${i}, ${e.dir})">
+      <span class="ico">${e.dir?'📁':'📄'}${e.symlink?'🔗':''}</span>
+      <span class="nm">${esc(e.name)}</span>
+      <span class="sz">${e.dir?'—':fmtSize(e.size)}</span>
+      <button class="del" onclick="event.stopPropagation();fileDelete(${i})">✕</button>
+    </div>`).join('');
+  $('files').innerHTML = `
+    <div class="crumbs">${crumbs.join('')}</div>
+    <div class="card" style="padding:4px 0;margin-bottom:10px">
+      ${rows || '<div class="empty" style="padding:18px 0">Empty directory — save a file below.</div>'}
+    </div>
+    <div class="card">
+      <h3>📝 ${S.files.editPath ? 'Editing ' + esc(S.files.editPath) : 'New file'}</h3>
+      <input id="fpath" placeholder="path/name.txt" value="${esc(S.files.editPath||'')}">
+      <textarea id="fcontent" placeholder="File contents…" style="width:100%;background:var(--surface2);border:1px solid var(--stroke);
+        border-radius:10px;color:var(--text);font-size:12.5px;padding:11px 12px;margin-top:10px;min-height:120px;
+        font-family:ui-monospace,monospace">${esc(S.files.editContent||'')}</textarea>
+      <div class="row">
+        <span class="tag">writes stay inside the workspace root</span>
+        <button class="btn primary" onclick="fileSave()">Save</button>
+      </div>
+    </div>`;
+}
+function fmtSize(n){ return n < 1024 ? n + ' B' : n < 1048576 ? (n/1024).toFixed(1) + ' KB' : (n/1048576).toFixed(1) + ' MB'; }
+function filesCd(dir){ S.files.cwd = dir; S.files.editPath = null; S.files.editContent = null; renderFiles(); }
+async function fileOpen(i, isDir){
+  const e = S.files.entries[i];
+  if (!e) return;
+  const p = S.files.cwd ? S.files.cwd + '/' + e.name : e.name;
+  if (isDir) { filesCd(p); return; }
+  const r = await api('/api/files/read?path=' + encodeURIComponent(p));
+  S.files.editPath = p;
+  S.files.editContent = r.content;
+  renderFiles();
+  window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+}
+async function fileSave(){
+  const p = $('fpath').value.trim();
+  if (!p) { toast('Enter a file path'); return; }
+  await post('/api/files/write', { path: p, content: $('fcontent').value });
+  toast('Saved ' + p);
+  S.files.editPath = p;
+  renderFiles();
+}
+async function fileDelete(i){
+  const e = S.files.entries[i];
+  if (!e) return;
+  const p = S.files.cwd ? S.files.cwd + '/' + e.name : e.name;
+  if (!confirm('Delete ' + p + '?')) return;
+  await post('/api/files/delete', { path: p });
+  toast('Deleted ' + p);
+  renderFiles();
 }
 
 // boot() is the single entry point: it validates the #token first, then refreshes

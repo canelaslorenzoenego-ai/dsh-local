@@ -193,13 +193,13 @@ async function until(fn, ms) {
     // ---- toggles / keys / test ----
     r = await req('POST', '/api/presets/toggle', { type: 'mcps', id: 'mcp-memory' });
     record('toggle on -> preset custom', r.code === 200 && JSON.parse(r.body).enabled === true);
-    r = await req('POST', '/api/keys', { integration: 'deepseek', key: 'sk-test-123456' });
+    r = await req('POST', '/api/keys', { integration: 'openai', key: 'sk-test-123456' });
     record('key store', r.code === 200);
     r = await req('GET', '/api/installed');
-    record('key stored masked (no plaintext)', JSON.parse(r.body).keys.deepseek && JSON.stringify(JSON.parse(r.body)).indexOf('sk-test-123456') === -1);
-    r = await req('POST', '/api/test', { type: 'integration', id: 'deepseek' });
-    record('test integration: stored key recognized', JSON.parse(r.body).ok === true);
+    record('key stored masked (no plaintext)', JSON.parse(r.body).keys.openai && JSON.stringify(JSON.parse(r.body)).indexOf('sk-test-123456') === -1);
     r = await req('POST', '/api/test', { type: 'integration', id: 'openai' });
+    record('test integration: stored key recognized', JSON.parse(r.body).ok === true);
+    r = await req('POST', '/api/test', { type: 'integration', id: 'anthropic' });
     record('test integration: missing key flagged', JSON.parse(r.body).ok === false);
     r = await req('POST', '/api/test', { type: 'mcp', id: 'mcp-memory' });
     record('test mcp: enabled -> ok', JSON.parse(r.body).ok === true);
@@ -228,6 +228,80 @@ async function until(fn, ms) {
     r = await req('GET', '/web/xterm.js?token=' + encodeURIComponent(SESS), null, 8788);
     record('terminal assets served with token', r.code === 200);
 
+    // ---- chat playground ----
+    r = await req('GET', '/api/chats');
+    record('chats: empty list initially', r.code === 200 && JSON.parse(r.body).chats.length === 0);
+    r = await req('POST', '/api/chat', { message: 'ping from smoke' });
+    const chat1 = JSON.parse(r.body);
+    record('chat: creates conversation via gateway', r.code === 200 && chat1.chat.messages.length === 2
+      && chat1.reply.indexOf('ping from smoke') !== -1, 'replies=' + chat1.chat.messages.length);
+    r = await req('POST', '/api/chat', { chatId: chat1.chat.id, message: 'second turn' });
+    const chat2 = JSON.parse(r.body);
+    record('chat: history accumulates in thread', r.code === 200 && chat2.chat.messages.length === 4
+      && chat2.chat.id === chat1.chat.id);
+    r = await req('GET', '/api/chats');
+    const chatList = JSON.parse(r.body).chats;
+    record('chats: listed with count + title', r.code === 200 && chatList.length === 1
+      && chatList[0].count === 4 && !!chatList[0].title);
+    r = await req('POST', '/api/chats/get', { id: chat1.chat.id });
+    record('chats: get by id', r.code === 200 && JSON.parse(r.body).messages.length === 4);
+    r = await req('POST', '/api/chat', { message: '' });
+    record('chat: empty message rejected', r.code === 400);
+    r = await req('POST', '/api/chats/delete', { id: chat1.chat.id });
+    r = await req('GET', '/api/chats');
+    record('chats: delete works', r.code === 200 && JSON.parse(r.body).chats.length === 0);
+
+    // ---- usage metering ----
+    r = await req('GET', '/api/usage');
+    const usage = JSON.parse(r.body);
+    record('usage: chat calls metered by model', r.code === 200 && usage.total >= 2
+      && usage.byModel['local-harness'] && usage.byModel['local-harness'].calls >= 2
+      && usage.byModel['local-harness'].messages >= 4, 'total=' + usage.total);
+
+    // ---- files manager ----
+    r = await req('GET', '/api/files');
+    const files0 = JSON.parse(r.body);
+    record('files: workspace listing', r.code === 200 && Array.isArray(files0.entries) && !!files0.root, files0.root);
+    r = await req('POST', '/api/files/write', { path: 'docs/hello.txt', content: 'hello from smoke' });
+    record('files: write creates nested file', r.code === 200);
+    r = await req('GET', '/api/files/read?path=docs/hello.txt');
+    record('files: read back matches', r.code === 200 && JSON.parse(r.body).content === 'hello from smoke');
+    r = await req('GET', '/api/files/read?path=../secrets.json');
+    record('files: traversal refused', r.code === 404);
+    r = await req('GET', '/api/files?dir=..');
+    record('files: dir traversal refused', r.code === 404);
+    r = await req('POST', '/api/files/write', { path: '../escape.txt', content: 'x' });
+    record('files: write traversal refused', r.code === 403);
+    r = await req('POST', '/api/files/delete', { path: 'docs/hello.txt' });
+    r = await req('GET', '/api/files/read?path=docs/hello.txt');
+    record('files: delete works', r.code === 404);
+
+    // ---- events / activity ----
+    r = await req('GET', '/api/events');
+    const ev0 = JSON.parse(r.body);
+    record('events: boot + chat + file events logged', r.code === 200 && ev0.events.length >= 2
+      && ev0.events.some(e => e.type === 'boot') && ev0.events.some(e => e.type === 'chat'),
+      ev0.events.map(e => e.type).join(','));
+    r = await req('GET', '/api/events');
+    const before = JSON.parse(r.body).events.length;
+    // ack first: it also resets the per-boot event dedup so a re-apply logs fresh
+    await req('POST', '/api/events/ack', {});
+    await req('POST', '/api/presets/apply', { id: 'minimal' });
+    r = await req('GET', '/api/events');
+    const ev1 = JSON.parse(r.body);
+    record('events: preset apply is logged', r.code === 200 && ev1.events.length >= 1
+      && ev1.events[0].type === 'preset', ev1.events.map(e => e.type).join(','));
+    r = await req('POST', '/api/events/ack', {});
+    r = await req('GET', '/api/events');
+    record('events: ack clears', r.code === 200 && JSON.parse(r.body).events.length === 0);
+
+    // ---- secrets vault ----
+    r = await req('POST', '/api/keys', { integration: 'deepseek', key: 'sk-vault-test' });
+    r = await req('GET', '/api/secrets');
+    const sec = JSON.parse(r.body);
+    record('secrets: id listed, plaintext never returned', r.code === 200 && sec.ids.includes('deepseek')
+      && r.body.indexOf('sk-vault-test') === -1, sec.file);
+
     // ---- SPA serving ----
     r = await req('GET', '/');
     record('console SPA served', r.code === 200 && r.body.indexOf('DSH Console') !== -1);
@@ -241,7 +315,7 @@ async function until(fn, ms) {
     await until(async () => { try { return (await req('GET', '/healthz')).code === 200; } catch (e) { return false; } }, 8000);
     r = await req('GET', '/api/status');
     const stAfter = JSON.parse(r.body);
-    record('state persists across restart', stAfter.preset === 'custom' && stAfter.integrations === 1, 'preset=' + stAfter.preset + ' integrations=' + stAfter.integrations);
+    record('state persists across restart', stAfter.preset === 'minimal' && stAfter.integrations === 2, 'preset=' + stAfter.preset + ' integrations=' + stAfter.integrations);
     r = await req('GET', '/api/session');
     const sessAfter = JSON.parse(r.body);
     record('session token survives restart', sessAfter.token === SESS, 'rotations=' + sessAfter.rotations);
