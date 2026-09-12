@@ -55,6 +55,11 @@ input:focus{outline:none;border-color:var(--accent)}
   opacity:0;transition:opacity .25s;pointer-events:none;max-width:88%;z-index:9}
 .toast.show{opacity:1}
 .empty{color:var(--muted);font-size:12.5px;text-align:center;padding:30px 0}
+.pkglog{background:#0A0D13;border:1px solid var(--stroke);border-radius:10px;padding:10px 12px;
+  font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:#7FE0A7;max-height:180px;
+  overflow:auto;white-space:pre-wrap;word-break:break-all;margin-top:10px}
+.pkgrow{display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid rgba(38,48,67,.6)}
+.pkgrow:last-child{border-bottom:none}
 .hint{color:var(--muted);font-size:11px;margin-top:6px;line-height:1.5}
 .tgrid{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
 .tgl{border:1px solid var(--stroke);background:var(--surface2);color:var(--muted);border-radius:99px;
@@ -202,6 +207,7 @@ input.num{width:90px;text-align:center}
     <button data-t="overview">Overview</button>
     <button data-t="chat">Chat</button>
     <button data-t="files">Files</button>
+    <button data-t="packages">Packages</button>
     <button data-t="plugins">Plugins</button>
     <button data-t="skills">Skills</button>
     <button data-t="mcps">MCPs</button>
@@ -212,6 +218,7 @@ input.num{width:90px;text-align:center}
   <section id="overview"></section>
   <section id="chat"></section>
   <section id="files"></section>
+  <section id="packages"></section>
   <section id="plugins"></section>
   <section id="skills"></section>
   <section id="mcps"></section>
@@ -664,6 +671,7 @@ async function refresh(){
     api('/api/status'), api('/api/catalog'), api('/api/installed'), api('/api/presets'),
     api('/api/usage'), api('/api/events')]);
   renderAll();
+  await renderPackages();
   await loadChats();
   renderChatShell();
   await renderFiles();
@@ -786,6 +794,98 @@ async function sendChat(){
   S.chat.busy = false;
   const btn = $('chatSend'); if (btn) { btn.disabled = false; btn.style.opacity = 1; }
   const box = $('msgs'); if (box) box.scrollTop = box.scrollHeight;
+}
+
+// ---- packages: real Termux apt ---------------------------------------------
+S.pkgs = { suggestions: [], installedCount: 0, job: null, apt: true, search: '', results: null, searching: false };
+async function renderPackages(){
+  try { S.pkgs = Object.assign(S.pkgs, await api('/api/packages')); } catch (e) { return; }
+  const p = S.pkgs;
+  const job = p.job;
+  const jobHtml = job ? `
+    <div class="card" style="margin-top:12px">
+      <div class="row" style="margin-top:0">
+        <h3>${job.running ? '⏳' : job.exit === 0 ? '✅' : '⚠️'} apt ${esc(job.kind)}${job.pkgs && job.pkgs.length ? ': ' + esc(job.pkgs.join(', ')) : ''}</h3>
+        <span class="badge ${job.running ? 'on' : job.exit === 0 ? 'on' : 'off'}">${job.running ? 'running' : job.exit === 0 ? 'done' : 'exit ' + job.exit}</span>
+      </div>
+      <pre class="pkglog">${esc((job.log || '').split('\n').slice(-14).join('\n') || 'starting…')}</pre>
+      ${!job.running && job.exit !== null ? '<button class="btn ghost" style="margin-top:8px" onclick="renderPackages()">Dismiss</button>' : ''}
+    </div>` : '';
+  const sug = p.suggestions.map(s => `
+    <button class="tgl ${s.installed ? 'on' : ''}" onclick="pkgAct('${s.installed ? 'uninstall' : 'install'}','${s.id}',this)">
+      ${s.name}${s.installed ? ' ✓' : ''}
+    </button>`).join('');
+  $('packages').innerHTML = `
+    <div class="card">
+      <div class="row" style="margin-top:0">
+        <h3>📦 Real Termux packages</h3>
+        <span class="badge ${p.apt ? 'on' : 'off'}">${p.apt ? 'apt ready' : 'booting'}</span>
+      </div>
+      <p>The container is a real Termux userland — <b>${p.installedCount}</b> packages installed.
+      Anything you install here (or the model installs through its shell with
+      <span class="mono">apt install -y …</span>) is immediately available to the agent's tools.</p>
+      <div class="tag" style="margin-top:10px">Quick install</div>
+      <div class="tgrid">${sug}</div>
+      <div class="tag" style="margin-top:14px">Search the whole repo</div>
+      <input class="search" placeholder="Search 1000+ Termux packages…" value="${esc(p.search)}"
+        oninput="pkgSearchInput(this.value)">
+      <div id="pkgResults">${pkgResultsHtml()}</div>
+    </div>
+    ${jobHtml}`;
+}
+function pkgResultsHtml(){
+  const p = S.pkgs;
+  if (p.searching) return '<div class="empty" style="padding:10px 0">Searching…</div>';
+  if (!p.search) return '';
+  if (!p.results || !p.results.length) return '<div class="empty" style="padding:10px 0">No packages matched “' + esc(p.search) + '”.</div>';
+  return p.results.map(r => `
+    <div class="pkgrow">
+      <div style="flex:1"><span class="mono">${esc(r.id)}</span><div class="edet">${esc(r.desc)}</div></div>
+      <button class="btn ghost" onclick="pkgAct('install','${esc(r.id)}',this)">Install</button>
+    </div>`).join('');
+}
+let pkgTimer = null;
+function pkgSearchInput(v){
+  S.pkgs.search = v;
+  clearTimeout(pkgTimer);
+  pkgTimer = setTimeout(async () => {
+    if (!v) { S.pkgs.results = null; const el = document.getElementById('pkgResults'); if (el) el.innerHTML = ''; return; }
+    S.pkgs.searching = true;
+    const el = document.getElementById('pkgResults'); if (el) el.innerHTML = '<div class="empty" style="padding:10px 0">Searching…</div>';
+    try {
+      const r = await api('/api/packages/search?q=' + encodeURIComponent(v));
+      S.pkgs.results = r.results || [];
+    } catch (e) { S.pkgs.results = []; }
+    S.pkgs.searching = false;
+    const el2 = document.getElementById('pkgResults'); if (el2) el2.innerHTML = pkgResultsHtml();
+  }, 400);
+}
+async function pkgAct(kind, pkg, btn){
+  if (btn) { btn.disabled = true; btn.style.opacity = .5; }
+  try {
+    const r = await post('/api/packages/' + kind, { packages: [pkg] });
+    if (r.ok) { toast('apt ' + kind + ' ' + pkg + ' started'); pollPkgJob(); }
+    else toast(r.error || 'apt job refused');
+  } catch (e) { toast('failed: ' + e.message); }
+  if (btn) { btn.disabled = false; btn.style.opacity = 1; }
+}
+let pkgPoll = null;
+function pollPkgJob(){
+  clearInterval(pkgPoll);
+  pkgPoll = setInterval(async () => {
+    try {
+      const p = await api('/api/packages');
+      S.pkgs.job = p.job;
+      if (p.job && p.job.running) {
+        const onPkg = document.querySelector('section#packages.on');
+        if (onPkg) renderPackages();
+      } else {
+        clearInterval(pkgPoll); pkgPoll = null;
+        const onPkg = document.querySelector('section#packages.on');
+        if (onPkg) { await renderPackages(); toast('apt job finished'); }
+      }
+    } catch (e) { clearInterval(pkgPoll); pkgPoll = null; }
+  }, 1500);
 }
 
 // ---- files manager ----

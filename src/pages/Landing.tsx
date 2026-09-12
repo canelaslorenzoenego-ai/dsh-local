@@ -22,13 +22,13 @@ import {
   Zap,
 } from "lucide-react";
 
-const APK_VERSION = "v2.7.2";
+const APK_VERSION = "v2.8.0";
 // Primary: the GitHub Release asset (permanent, CDN-backed, works everywhere).
-// Fallback: the raw file on main. Both serve the same signed v2.7.2 APK.
+// Fallback: the raw file on main. Both serve the same signed v2.8.0 APK.
 const APK_FILE =
-  "https://github.com/canelaslorenzoenego-ai/dsh-local/releases/latest/download/dsh-local-v2.7.2.apk";
+  "https://github.com/canelaslorenzoenego-ai/dsh-local/releases/latest/download/dsh-local-v2.8.0.apk";
 const APK_FALLBACK =
-  "https://raw.githubusercontent.com/canelaslorenzoenego-ai/dsh-local/main/public/downloads/dsh-local-v2.7.2.apk";
+  "https://raw.githubusercontent.com/canelaslorenzoenego-ai/dsh-local/main/public/downloads/dsh-local-v2.8.0.apk";
 void APK_FALLBACK;
 
 const fadeUp = {
@@ -51,6 +51,11 @@ const capabilities = [
   },
   {
     icon: Terminal,
+    title: "Real Termux packages",
+    body: "Search and install 1000+ packages from the Termux repos right in the console — and the model installs its own tools with plain `apt install` through its shell.",
+  },
+  {
+    icon: Wrench,
     title: "Built-in terminal",
     body: "Real bash login shell in a xterm.js tab — inside the app or in Chrome. git, python, jq, ripgrep, ssh pre-provisioned into the embedded Linux.",
   },
@@ -364,7 +369,7 @@ export default function Landing() {
           {[
             "Tokenized session links — the console opens only through the link, rotate anytime",
             "4 real dsh presets + a full Custom studio (profiles, import/export)",
-            "13 plugins, 9 skills, 8 MCPs, 8 integrations — hardened against symlink escapes, oversized payloads, and token-less access (91-check test suite)",
+            "13 plugins, 9 skills, 8 MCPs, 8 integrations, plus a real apt-backed Termux package system — the model installs its own tools (98-check test suite)",
             "Tool search and detail sheets for every capability",
             "PIN privacy, in-app or Chrome opening, foreground-service keepalive",
           ].map((li) => (

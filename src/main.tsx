@@ -104,7 +104,10 @@ createRoot(document.getElementById("root")!).render(
       <ToolbarErrorBoundary>
         <VlyToolbar />
       </ToolbarErrorBoundary>
-      <BrowserRouter>
+      {/* On GitHub Pages the site lives under /dsh-local/ — tell the router,
+          otherwise every URL 404s into the NotFound catch-all and the page
+          renders blank. Locally BASE_URL is "/" so basename is undefined. */}
+      <BrowserRouter basename={import.meta.env.BASE_URL === "/" ? undefined : import.meta.env.BASE_URL}>
         <RouteSyncer />
         <Suspense fallback={<RouteLoading />}>
           <Routes>

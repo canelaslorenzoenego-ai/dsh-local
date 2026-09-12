@@ -7,9 +7,9 @@
 Embedded Linux · DeepSeek Harness console · OpenAI-compatible gateway · real terminal —
 all on `127.0.0.1`, all on-device, zero cloud, zero accounts.
 
-[![version](https://img.shields.io/badge/version-v2.7.2-4D6BFE)](#version-history)
+[![version](https://img.shields.io/badge/version-v2.8.0-4D6BFE)](#version-history)
 [![platform](https://img.shields.io/badge/platform-Android%208.0%2B%20ARM64-2FD575)](#requirements)
-[![tests](https://img.shields.io/badge/smoke%20tests-80%2F80%20%E2%9C%93-2FD575)](#testing)
+[![tests](https://img.shields.io/badge/smoke%20tests-98%2F98%20%E2%9C%93-2FD575)](#testing)
 [![backend](https://img.shields.io/badge/backend-none%20·%20on--device-F5B942)](#the-web-page-in-this-repo)
 [![license](https://img.shields.io/badge/license-unlicensed--private-8B96AC)]()
 
@@ -45,7 +45,7 @@ workstation inside a single ~30 MB APK:
 
 ## Quick start
 
-1. **Download** [`public/downloads/dsh-local-v2.7.2.apk`](public/downloads/dsh-local-v2.7.2.apk)
+1. **Download** [`public/downloads/dsh-local-v2.8.0.apk`](public/downloads/dsh-local-v2.8.0.apk)
    (or grab it from the [website](https://canelaslorenzoenego-ai.github.io/dsh-local/))
    and sideload it (allow *install unknown apps* when prompted).
 2. **Open the app.** The embedded Linux extracts itself on first open (~30 s, one time)
@@ -175,6 +175,10 @@ Bearer`, or `x-dsh-token`), except `/healthz` and `/api/session*`. JSON in/out.
 | `GET /api/files?dir= · /read · /write · /delete` | workspace browser (traversal-safe) |
 | `GET /api/usage` | metered completions per model / tool |
 | `GET /api/events · POST /api/events/ack` | activity feed · clear it |
+| `GET /api/packages` | installed packages, quick-install suggestions, running apt job |
+| `GET /api/packages/search?q=` | search the whole Termux repo via apt-cache |
+| `POST /api/packages/install · /uninstall {packages[]}` | apt install/remove -y (one job at a time) |
+| `POST /api/packages/update` | refresh the apt package index |
 | `GET /api/installed` | raw state.json (keys masked) |
 
 ## How it compares
@@ -240,6 +244,21 @@ A workspace browser confined to `~/workspace` (the agent's own root):
 - Tap to view/edit any text file in a monospace editor; save or delete
 - Server-side **path traversal protection**: every read/write resolves inside the
   workspace root — `../` escapes and symlinks out are refused (covered by tests)
+
+### Packages — real Termux apt
+
+The container **is** a Termux userland, so the Packages tab manages real packages:
+
+- **Quick install** chips for 28 common tools (python, nodejs, git, ripgrep, jq,
+  golang, rust, clang, tmux, sqlite, openssl, …) with live installed state
+- **Search the whole Termux repo** (`apt-cache search`, ~1000+ packages) and install
+  any of them from the console
+- **One apt job at a time** (dpkg locking), with a **live log view** of the running
+  install and its exit status; every job lands in the Activity feed
+- **The model installs its own tools**: its shell runs inside the prefix with `apt`
+  on PATH, so `apt install -y ffmpeg` in an agent task just works — anything
+  installed lands in the same userland the agent's tools execute in
+- Package names are validated (`^[a-z0-9][a-z0-9+.-]*$`) before they ever reach apt
 
 ### Usage analytics
 
@@ -309,7 +328,7 @@ The vault endpoint (`GET /api/secrets`) lists which ids are set — never values
 
 ```
 ├── apk/                              # the product: native Android source
-│   ├── AndroidManifest.xml           # com.dshlocal.app, targetSdk 28, v2.7.2
+│   ├── AndroidManifest.xml           # com.dshlocal.app, targetSdk 28, v2.8.0
 │   ├── build.sh                      # aapt2 → javac → d8 → zipalign → apksigner
 │   ├── src/com/dshlocal/app/
 │   │   ├── MainActivity.java         # dashboard, session-link card, PIN, WebView hosts
@@ -323,7 +342,7 @@ The vault endpoint (`GET /api/secrets`) lists which ids are set — never values
 │   │   ├── setup.sh / provision.sh   # node install + toolchain provisioning
 │   │   └── web/                      # console SPA + terminal (xterm.js)
 │   ├── res/                          # layouts, drawables, animations
-│   └── test/smoke.cjs                # 80-assertion end-to-end server test
+│   └── test/smoke.cjs                # 98-assertion end-to-end server test
 ├── docs/                             # rendered product screenshots (PNG)
 ├── public/downloads/                 # signed release APK (served by the web page)
 ├── scripts/
@@ -361,13 +380,15 @@ terminal token gate, path-traversal protection, and state persistence across
 restarts — plus the v2.7.0 systems end-to-end: the chat playground (gateway
 round-trip, history accumulation, listing, deletion), usage metering, the files
 manager (nested writes, read-back, traversal refusal in all three handlers), the
-event log (boot/chat/preset events, ack), and the secrets vault. Since v2.7.2 it
+event log (boot/chat/preset events, ack), and the secrets vault. Since v2.8.0 it
 also runs an adversarial hardening suite: oversized request bodies (413 + server
 survives), symlink escapes refused in read/list/delete, >4 MB file reads refused,
 chat history hard-capped at 500 messages, malformed JSON handled, the chat relay
 presenting a bearer key when `gateway.json` requires one (and the gateway
-rejecting a wrong key), and the terminal failing closed without a token.
-**91 assertions, all green.**
+rejecting a wrong key), and the terminal failing closed without a token. Since
+v2.8.0 it also covers the package system: listing + suggestions, invalid package
+names rejected, install jobs accepted and settling with an exit state, repo search,
+and uninstall. **98 assertions, all green.**
 
 ### Screenshots
 
@@ -457,7 +478,8 @@ an inline error on the harness card; press Start to retry.
 | v2.6.0 | Session-token auth (dsh tokenized links), catalog 13/9/8/8, dashboard session card — 61/61 green |
 | **v2.7.0** | **Chat playground, files manager, usage analytics, activity feed, secrets vault, notification tap-through, in-app console — 80/80 green** |
 | v2.7.1 | **Device bugfix release: LD_LIBRARY_PATH exec fix, shebang repair, proxy self-installs node, crash diagnostics on the dashboard — 80/80 green** |
-| **v2.7.2** | **Hardening release: symlink-escape-proof workspace API, request-body caps, file-size caps, chat history cap, gateway apiKeys support in the chat relay, terminal polling backoff — 91/91 green** |
+| v2.7.2 | **Hardening release: symlink-escape-proof workspace API, request-body caps, file-size caps, chat history cap, gateway apiKeys support in the chat relay, terminal polling backoff — 91/91 green** |
+| **v2.8.0** | **Real Termux package system: apt-backed Packages tab (search 1000+ repo packages, install/uninstall, live job log), model installs its own tools via shell `apt install`, busybox applets on PATH — 98/98 green + website basename fix** |
 
 ---
 

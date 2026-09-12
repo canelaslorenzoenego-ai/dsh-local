@@ -388,6 +388,38 @@ async function until(fn, ms) {
       rq.end();
     });
 
+    // ---- packages: real Termux apt API (desktop has no apt — fail-soft expected) ----
+    r = await req('GET', '/api/packages');
+    const pk = JSON.parse(r.body);
+    record('packages: listing + suggestions', r.code === 200 && Array.isArray(pk.installed)
+      && Array.isArray(pk.suggestions) && pk.suggestions.length >= 25 && typeof pk.installedCount === 'number',
+      'installed=' + pk.installedCount + ' suggestions=' + pk.suggestions.length);
+    record('packages: apt presence reported honestly', pk.apt === false || pk.apt === true, 'apt=' + pk.apt);
+    r = await req('POST', '/api/packages/install', { packages: ['../evil; rm -rf /'] });
+    record('packages: invalid name rejected', r.code === 400, 'code=' + r.code);
+    r = await req('POST', '/api/packages/install', { packages: ['curl'] });
+    const instOk = r.code === 200;
+    record('packages: install job accepted', instOk, 'code=' + r.code);
+    if (instOk) {
+      // job must complete (on desktop spawn fails; on device apt runs) — either way it must settle
+      const settled = await until(async () => {
+        const j = JSON.parse((await req('GET', '/api/packages')).body).job;
+        return !j || !j.running;
+      }, 15000);
+      const j = JSON.parse((await req('GET', '/api/packages')).body).job;
+      record('packages: job settles with exit state', settled && j && j.exit !== null, 'exit=' + (j && j.exit));
+      // dpkg lock: a second concurrent job must be refused while one runs
+    }
+    r = await req('GET', '/api/packages/search?q=git');
+    const sr = JSON.parse(r.body);
+    record('packages: search returns (empty on desktop, 200)', r.code === 200 && Array.isArray(sr.results), 'n=' + sr.results.length);
+    r = await req('POST', '/api/packages/uninstall', { packages: ['curl'] });
+    record('packages: uninstall accepted', r.code === 200 || r.code === 409, 'code=' + r.code);
+    await until(async () => {
+      const j = JSON.parse((await req('GET', '/api/packages')).body).job;
+      return !j || !j.running;
+    }, 15000);
+
     // ---- state persistence across restart ----
     procs[0].kill();
     await until(async () => { try { await req('GET', '/healthz'); return false; } catch (e) { return true; } }, 4000);

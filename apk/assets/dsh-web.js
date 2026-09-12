@@ -22,6 +22,11 @@
 //   POST /api/presets/apply | /api/presets/toggle | /api/presets/custom
 //   POST /api/presets/profile/apply | /api/presets/profile/delete
 //   GET  /api/tool?type=&id=                per-tool deep info
+//   GET  /api/packages                      installed + quick-install suggestions + job state
+//   GET  /api/packages/search?q=            search the whole Termux repo (apt-cache)
+//   POST /api/packages/install {packages[]} apt install -y (one job at a time)
+//   POST /api/packages/uninstall {packages[]}
+//   POST /api/packages/update               apt update (refresh package index)
 // Everything is file-backed in $HOME/dsh-data/. localhost only.
 const http = require('http');
 const fs = require('fs');
@@ -232,6 +237,93 @@ function defaultState() {
     for (const id in b[k]) s[k][id] = { enabled: true, since: now };
   }
   return s;
+}
+
+// ---- packages: real Termux apt ----------------------------------------------
+// The container IS a Termux userland: apt/dpkg from the bootstrap, Termux repos
+// in sources.list, everything under $PREFIX. The model installs whatever it
+// needs through its own shell tool (`apt install -y ffmpeg`); these endpoints
+// mirror that power in the console UI. One apt job at a time (dpkg locks).
+const PREFIX = process.env.PREFIX || '/data/data/com.dshlocal.app/files/usr';
+const APT = path.join(PREFIX, 'bin', 'apt');
+const APT_CACHE = path.join(PREFIX, 'bin', 'apt-cache');
+function installedPackages() {
+  try {
+    const st = fs.readFileSync(path.join(PREFIX, 'var/lib/dpkg/status'), 'utf8');
+    const out = [];
+    for (const m of st.matchAll(/^Package: (.+)$/gm)) out.push(m[1]);
+    return out;
+  } catch (e) { return []; }
+}
+const COMMON_PKGS = [
+  { id: 'python', name: 'Python', desc: 'python + pip interpreter' },
+  { id: 'nodejs', name: 'Node.js', desc: 'JavaScript runtime' },
+  { id: 'git', name: 'Git', desc: 'version control' },
+  { id: 'ripgrep', name: 'ripgrep', desc: 'fast code search (grep)' },
+  { id: 'jq', name: 'jq', desc: 'JSON processor' },
+  { id: 'curl', name: 'curl', desc: 'HTTP client' },
+  { id: 'wget', name: 'wget', desc: 'downloader' },
+  { id: 'openssh', name: 'OpenSSH', desc: 'ssh client + scp' },
+  { id: 'nano', name: 'nano', desc: 'simple editor' },
+  { id: 'vim', name: 'Vim', desc: 'classic editor' },
+  { id: 'tmux', name: 'tmux', desc: 'terminal multiplexer' },
+  { id: 'zip', name: 'zip', desc: 'archive tool' },
+  { id: 'unzip', name: 'unzip', desc: 'archive extractor' },
+  { id: 'tar', name: 'tar', desc: 'archive tool' },
+  { id: 'golang', name: 'Go', desc: 'Go compiler + toolchain' },
+  { id: 'rust', name: 'Rust', desc: 'rustc + cargo' },
+  { id: 'clang', name: 'Clang', desc: 'C/C++ compiler' },
+  { id: 'cmake', name: 'CMake', desc: 'build system' },
+  { id: 'make', name: 'make', desc: 'build runner' },
+  { id: 'pkg-config', name: 'pkg-config', desc: 'library flags helper' },
+  { id: 'sqlite', name: 'SQLite', desc: 'embedded database CLI' },
+  { id: 'openssl', name: 'OpenSSL', desc: 'TLS toolkit' },
+  { id: 'procps', name: 'procps', desc: 'ps/top process tools' },
+  { id: 'findutils', name: 'findutils', desc: 'find + xargs' },
+  { id: 'fish', name: 'fish', desc: 'friendly shell' },
+  { id: 'zsh', name: 'zsh', desc: 'Z shell' },
+  { id: 'htop', name: 'htop', desc: 'process viewer' },
+];
+function aptEnv() {
+  return Object.assign({}, process.env, {
+    PATH: PREFIX + '/bin:' + PREFIX + '/bin/applets:' + (process.env.PATH || ''),
+    HOME: process.env.HOME || path.join(PREFIX, '..', 'home'),
+    TMPDIR: path.join(PREFIX, 'tmp'),
+    PREFIX: PREFIX,
+    LD_PRELOAD: '',
+    LANG: 'C.UTF-8',
+  });
+}
+function validPkgName(p) {
+  return typeof p === 'string' && /^[a-z0-9][a-z0-9+.-]*$/i.test(p) && p.length <= 64;
+}
+const PKG_JOB = { current: null };
+function pkgJob() { return PKG_JOB.current; }
+function startPkgJob(kind, pkgs) {
+  const prev = PKG_JOB.current;
+  if (prev && prev.running) return null;
+  const job = { kind, pkgs, running: true, started: Date.now(), log: '', exit: null };
+  PKG_JOB.current = job;
+  const args = kind === 'update' ? ['update']
+    : kind === 'remove' ? ['remove', '-y'].concat(pkgs)
+    : ['install', '-y'].concat(pkgs);
+  pushEvent('pkg', 'apt ' + kind + ': ' + (pkgs.length ? pkgs.join(', ') : 'index'), 'running', 'info');
+  let child;
+  try { child = require('child_process').spawn(APT, args, { env: aptEnv() }); }
+  catch (e) { job.running = false; job.exit = -1; job.log = 'spawn failed: ' + e.message; return job; }
+  const cap = (d) => { job.log = (job.log + d).slice(-16000); };
+  child.stdout.on('data', cap);
+  child.stderr.on('data', cap);
+  child.on('error', (e) => {
+    job.running = false; job.exit = -1;
+    job.log = (job.log + '\nspawn failed: ' + e.message).slice(-16000);
+    pushEvent('pkg', 'apt ' + kind + ' failed', String(e.message).slice(0, 120), 'warn');
+  });
+  child.on('close', (code) => {
+    job.running = false; job.exit = code;
+    pushEvent('pkg', 'apt ' + kind + (pkgs.length ? ': ' + pkgs.join(', ') : ''), code === 0 ? 'done' : 'exit ' + code, code === 0 ? 'info' : 'warn');
+  });
+  return job;
 }
 
 // ---- helpers ----------------------------------------------------------------
@@ -754,6 +846,61 @@ const server = http.createServer(async (req, res) => {
     const s = secrets();
     const ids = Object.keys(s).filter(k => k !== '__created');
     return json(res, 200, { ids, file: SECRETS.replace(HOME, '$HOME') });
+  }
+
+  // ---- packages: real Termux apt -------------------------------------------
+  if (u.pathname === '/api/packages' && req.method === 'GET') {
+    const inst = installedPackages();
+    const instSet = new Set(inst);
+    return json(res, 200, {
+      prefix: PREFIX,
+      installedCount: inst.length,
+      installed: inst,
+      suggestions: COMMON_PKGS.map(p => Object.assign({}, p, { installed: instSet.has(p.id) })),
+      job: pkgJob(),
+      apt: fs.existsSync(APT),
+    });
+  }
+  if (u.pathname === '/api/packages/search' && req.method === 'GET') {
+    const q = (u.searchParams.get('q') || '').trim();
+    if (!q) return json(res, 200, { results: [] });
+    if (!fs.existsSync(APT_CACHE)) return json(res, 200, { results: [], error: 'apt-cache not present yet' });
+    const pkgs = await new Promise((resolve) => {
+      let out = '', done = false, timer = null;
+      const finish = (v) => { if (done) return; done = true; clearTimeout(timer); resolve(v); };
+      let cp = null;
+      try { cp = require('child_process').spawn(APT_CACHE, ['search', '--', q], { env: aptEnv() }); }
+      catch (e) { return finish([]); }
+      const cap = (d) => { out = (out + d).slice(-32000); };
+      cp.stdout.on('data', cap); cp.stderr.on('data', cap);
+      cp.on('error', () => finish([]));
+      cp.on('close', () => {
+        const results = [];
+        for (const line of out.split('\n')) {
+          const m = line.match(/^([a-z0-9][a-z0-9+.-]*)\/(\S+) - (.+)$/);
+          if (m) results.push({ id: m[1], repo: m[2], desc: m[3].slice(0, 140) });
+          if (results.length >= 40) break;
+        }
+        finish(results);
+      });
+      timer = setTimeout(() => { try { cp.kill(); } catch (e) {} finish([]); }, 8000);
+    });
+    return json(res, 200, { results: pkgs });
+  }
+  if ((u.pathname === '/api/packages/install' || u.pathname === '/api/packages/uninstall') && req.method === 'POST') {
+    const b = await body(req);
+    if (b.__tooLarge) return json(res, 413, { error: 'payload too large' });
+    const pkgs = Array.isArray(b.packages) ? b.packages.filter(validPkgName) : [];
+    if (!pkgs.length) return json(res, 400, { error: 'valid package name(s) required' });
+    const kind = u.pathname.endsWith('/uninstall') ? 'remove' : 'install';
+    const job = startPkgJob(kind, pkgs);
+    if (!job) return json(res, 409, { error: 'another apt job is running', job: pkgJob() });
+    return json(res, 200, { ok: true, job: { kind: job.kind, pkgs: job.pkgs, started: job.started } });
+  }
+  if (u.pathname === '/api/packages/update' && req.method === 'POST') {
+    const job = startPkgJob('update', []);
+    if (!job) return json(res, 409, { error: 'another apt job is running', job: pkgJob() });
+    return json(res, 200, { ok: true, job: { kind: job.kind, started: job.started } });
   }
 
   if (u.pathname === '/api/tool' && req.method === 'GET') {

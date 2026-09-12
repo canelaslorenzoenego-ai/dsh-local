@@ -128,7 +128,9 @@ public class ServerService extends Service {
             pb.environment().put("HOME", BootstrapInstaller.homeDir(this));
             pb.environment().put("TMPDIR", BootstrapInstaller.tmpDir(this));
             pb.environment().put("PATH",
-                    BootstrapInstaller.prefixDir(this) + "/bin:" + System.getenv("PATH"));
+                    BootstrapInstaller.prefixDir(this) + "/bin:"
+                            + BootstrapInstaller.prefixDir(this) + "/bin/applets:"
+                            + System.getenv("PATH"));
             // CRITICAL: Termux binaries resolve their bundled .so files (libandroid-support,
             // libc++_shared, …) through LD_LIBRARY_PATH — Termux always sets it, and without
             // it every dynamic executable in the prefix fails to start.

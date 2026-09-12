@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.dshlocal.app"
-    android:versionCode="13"
-    android:versionName="2.7.2">
+    android:versionCode="14"
+    android:versionName="2.8.0">
 
     <!-- targetSdk 28 intentionally: bypasses Android 10+ W^X exec restriction,
          same approach as Termux F-Droid. Enables exec from app-private storage. -->
