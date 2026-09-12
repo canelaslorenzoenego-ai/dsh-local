@@ -132,6 +132,123 @@
                 android:orientation="vertical"
                 android:padding="16dp">
 
+                <!-- Session link card (the tokenized console URL) -->
+                <LinearLayout
+                    android:id="@+id/sessCard"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:background="@drawable/sess_bg"
+                    android:padding="16dp"
+                    android:visibility="gone">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <TextView
+                            android:id="@+id/sessDot"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="●"
+                            android:textSize="11sp"
+                            android:textColor="@color/green" />
+
+                        <TextView
+                            android:id="@+id/sessState"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginLeft="6dp"
+                            android:text="@string/session_active"
+                            android:textColor="@color/green"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/session_title"
+                            android:textColor="@color/muted"
+                            android:textSize="10sp" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/sessLink"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:background="@drawable/chip_bg"
+                        android:padding="10dp"
+                        android:fontFamily="monospace"
+                        android:textSize="11sp"
+                        android:textColor="@color/accent2"
+                        android:textIsSelectable="true"
+                        android:text="http://127.0.0.1:3080/#token=…" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:orientation="horizontal">
+
+                        <Button
+                            android:id="@+id/btnCopyLink"
+                            android:layout_width="0dp"
+                            android:layout_height="40dp"
+                            android:layout_weight="1"
+                            android:text="@string/session_copy"
+                            android:textSize="12sp"
+                            android:textColor="@color/text"
+                            android:background="@drawable/btn_secondary" />
+
+                        <Button
+                            android:id="@+id/btnRotate"
+                            android:layout_width="0dp"
+                            android:layout_height="40dp"
+                            android:layout_weight="1"
+                            android:layout_marginLeft="10dp"
+                            android:text="@string/session_rotate"
+                            android:textSize="12sp"
+                            android:textColor="@color/text"
+                            android:background="@drawable/btn_secondary" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/session_hint"
+                        android:textColor="@color/muted"
+                        android:textSize="10.5sp"
+                        android:lineSpacingExtra="2dp" />
+
+                    <LinearLayout
+                        android:id="@+id/sessLoading"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:visibility="gone">
+
+                        <ProgressBar
+                            android:layout_width="18dp"
+                            android:layout_height="18dp"
+                            android:indeterminateTint="@color/amber" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginLeft="10dp"
+                            android:text="@string/session_booting"
+                            android:textColor="@color/amber"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+                </LinearLayout>
+
                 <!-- Harness card -->
                 <LinearLayout
                     android:layout_width="match_parent"

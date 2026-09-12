@@ -9,7 +9,7 @@
     <string name="stop">Stop</string>
     <string name="open">Open</string>
     <string name="harness_name">DeepSeek Harness</string>
-    <string name="harness_sub">dsh web · 127.0.0.1:3080</string>
+    <string name="harness_sub">dsh web · 127.0.0.1:3080 · token-gated</string>
     <string name="proxy_name">Proxy Gateway</string>
     <string name="proxy_sub">OpenAI-compatible · 127.0.0.1:8787</string>
     <string name="state_offline">Offline</string>
@@ -18,4 +18,12 @@
     <string name="state_stopping">Stopping…</string>
     <string name="pin_title">Enter PIN</string>
     <string name="pin_wrong">Wrong PIN</string>
+
+    <string name="session_title">Console session link</string>
+    <string name="session_active">Session active — tokenized access</string>
+    <string name="session_booting">Generating session token…</string>
+    <string name="session_copy">Copy link</string>
+    <string name="session_rotate">Rotate token</string>
+    <string name="session_hint">Only this link opens the console — anyone holding it has full access. Rotate to kill every copy instantly.</string>
+    <string name="session_none">Open the console with the tokenized session link</string>
 </resources>

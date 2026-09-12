@@ -30,9 +30,20 @@
   });
   term.open(document.getElementById('term'));
 
+  // session token: taken from the link you opened (?token=… or #token=…)
+  var TOKEN = new URLSearchParams(location.search).get('token')
+    || (location.hash.match(/token=([^&]+)/) || [])[1] || '';
+  function withToken(path) {
+    if (!TOKEN) return path;
+    return path + (path.indexOf('?') >= 0 ? '&' : '?') + 'token=' + encodeURIComponent(TOKEN);
+  }
+
   var seq = 0;
   function pump() {
-    fetch('/stream?seq=' + seq).then(function(r){ return r.json(); }).then(function(j){
+    fetch(withToken('/stream?seq=' + seq)).then(function(r){
+      if (r.status === 401) throw new Error('locked');
+      return r.json();
+    }).then(function(j){
       if (j.data) term.write(j.data);
       seq = j.seq;
       document.getElementById('offline').style.display = 'none';
@@ -44,7 +55,7 @@
   pump();
 
   term.onData(function(d){
-    fetch('/input', { method:'POST', body: d });
+    fetch(withToken('/input'), { method:'POST', body: d });
   });
 </script>
 </body>

@@ -84,12 +84,63 @@ input.num{width:90px;text-align:center}
   width:30px;height:30px;font-size:14px;cursor:pointer}
 .msec{margin-top:14px}
 .msec .tag{display:block;margin-bottom:6px}
-.mdocs{color:var(--text);font-size:13px;line-height:1.65}
+.msdocs{color:var(--text);font-size:13px;line-height:1.65}
+.lock{position:fixed;inset:0;background:var(--bg);z-index:50;display:none;
+  align-items:center;justify-content:center;padding:24px;text-align:center}
+.lock.show{display:flex}
+.lock .box{max-width:420px}
+.lock h2{font-size:20px;margin:0 0 10px}
+.lock p{color:var(--muted);font-size:13.5px;line-height:1.65}
+.lock code{color:var(--accent2);background:var(--surface2);border:1px solid var(--stroke);
+  border-radius:8px;padding:2px 8px;font-size:12px}
+.sess{position:sticky;top:0;z-index:5;background:linear-gradient(180deg,rgba(27,52,38,.96),rgba(18,23,34,.96));
+  border:1px solid rgba(47,213,117,.35);border-radius:14px;padding:12px 14px;margin:14px 0 4px;
+  box-shadow:0 6px 18px -10px rgba(0,0,0,.7)}
+.sess .top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.sess .ttl{font-size:12px;font-weight:700;color:var(--green);display:flex;align-items:center;gap:6px}
+.sess .ttl .dot{width:7px;height:7px;border-radius:50%;background:var(--green);
+  box-shadow:0 0 8px rgba(47,213,117,.6);animation:seespulse 2s infinite}
+@keyframes seespulse{0%,100%{box-shadow:0 0 0 0 rgba(47,213,117,.45)}50%{box-shadow:0 0 0 6px rgba(47,213,117,0)}}
+.sess .link{margin-top:8px;background:var(--surface2);border:1px solid var(--stroke);border-radius:10px;
+  padding:9px 11px;font-family:ui-monospace,monospace;font-size:11px;color:var(--accent2);
+  word-break:break-all;user-select:all}
+.sess .acts{display:flex;gap:8px;margin-top:9px}
+.sess .acts .btn{flex:1;padding:8px 6px;font-size:11.5px}
+.sess .hint{margin-top:8px;font-size:10.5px;color:var(--muted);line-height:1.5}
+.pulse{animation:seespulse 2s infinite}
+.flash{position:fixed;inset:0;background:rgba(47,213,117,.14);z-index:40;pointer-events:none;
+  opacity:0;transition:opacity .3s}
+.flash.show{opacity:1}
 
 </style>
 </head>
 <body>
+<div class="flash" id="flash"></div>
+<div class="lock" id="lock">
+  <div class="box">
+    <h2>🔒 Session locked</h2>
+    <p>This console is protected by a session token — the same way
+    <span class="mono">dsh web</span> prints its tokenized link on start.</p>
+    <p>Open the console through the link shown on the DSH Local dashboard
+    (or add <code>#token=…</code> to this URL). The token rotates whenever you
+    rotate it on the dashboard.</p>
+  </div>
+</div>
 <div class="wrap">
+  <div class="sess" id="sessBanner" style="display:none">
+    <div class="top">
+      <span class="ttl"><span class="dot"></span>SESSION ACTIVE — tokenized access</span>
+      <span class="tag" id="sessRot"></span>
+    </div>
+    <div class="link" id="sessLink"></div>
+    <div class="acts">
+      <button class="btn ghost" onclick="copyLink()">Copy link</button>
+      <button class="btn ghost" onclick="rotateSess()">Rotate token</button>
+      <button class="btn ghost" onclick="shareLink()">Share</button>
+    </div>
+    <div class="hint">Anyone with this link has full console access — keep it private. Rotate to invalidate every copy instantly.</div>
+  </div>
+
   <h1>⚡ DSH Console</h1>
   <div class="sub">DeepSeek Harness · localhost · on-device</div>
   <div class="chips" id="envchips"></div>
@@ -116,16 +167,73 @@ input.num{width:90px;text-align:center}
 </div>
 
 <script>
-const S = { status:null, catalog:null, installed:null, presets:null };
+const S = { status:null, catalog:null, installed:null, presets:null, token:null };
 const $ = id => document.getElementById(id);
 
 function toast(m){
   const t = $('toast'); t.textContent = m; t.classList.add('show');
   clearTimeout(t._h); t._h = setTimeout(()=>t.classList.remove('show'), 2600);
 }
+function flash(){
+  const f = $('flash'); f.classList.add('show');
+  setTimeout(()=>f.classList.remove('show'), 280);
+}
 async function api(path, opts){
-  const r = await fetch(path, opts);
+  let p = path;
+  if (S.token && p.indexOf('token=') === -1) {
+    p += (p.indexOf('?') >= 0 ? '&' : '?') + 'token=' + encodeURIComponent(S.token);
+  }
+  const r = await fetch(p, opts);
+  if (r.status === 401) { showLock(); throw new Error('unauthorized'); }
   return r.json();
+}
+function showLock(){ $('lock').classList.add('show'); }
+
+// ---- session boot: the only way in is the #token= link ----
+async function boot(){
+  const urlTok = (location.hash.match(/token=([^&]+)/) || [])[1]
+    || new URLSearchParams(location.search).get('token') || '';
+  try {
+    const sess = await fetch('/api/session').then(r=>r.json());
+    if (sess.protected && !urlTok) {
+      showLock();
+      return;
+    }
+    if (urlTok) {
+      const ex = await fetch('/api/session/exchange', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ token: urlTok })});
+      if (!ex.ok) { showLock(); return; }
+      S.token = urlTok;
+      // clean the hash so the token isn't left in the address bar
+      history.replaceState(null, '', location.pathname);
+      flash();
+      const j = await ex.json();
+      renderSession(j.link);
+    }
+  } catch(e) { /* server not up yet — retry loop below */ }
+  await refresh();
+}
+function renderSession(link, rotations){
+  $('sessBanner').style.display = '';
+  $('sessLink').textContent = link;
+  $('sessRot').textContent = rotations ? 'rotated ×' + rotations : 'fresh';
+}
+function copyLink(){
+  navigator.clipboard.writeText($('sessLink').textContent)
+    .then(()=>toast('Session link copied'))
+    .catch(()=>toast('Long-press the link to copy'));
+}
+async function rotateSess(){
+  const r = await post('/api/session/rotate', {});
+  S.token = r.token;
+  renderSession(r.link, r.rotations);
+  toast('Token rotated — old links are dead');
+}
+async function shareLink(){
+  const link = $('sessLink').textContent;
+  if (navigator.share) navigator.share({ title:'DSH Console session', url: link }).catch(()=>{});
+  else copyLink();
 }
 const post = (p,b) => api(p, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(b)});
 
@@ -284,8 +392,7 @@ function renderPresets(){
         <button class="btn ${P.active===p.id?'ghost':'primary'}"
           onclick="applyPreset('${p.id}')">${P.active===p.id?'Re-apply':'Apply'}</button>
       </div>
-    </div>`).join('')}
-    ${customCard()}`;
+    </div>`).join('') + customCard();
 }
 function customCard(){
   const ag = (S.status && S.status.agent) || {};
@@ -480,8 +587,15 @@ async function saveKey(id){
   await refresh();
 }
 
-refresh();
-setInterval(() => { api('/api/status').then(s => { S.status = s; renderEnv(); }).catch(()=>{}); }, 5000);
+// boot() is the single entry point: it validates the #token first, then refreshes
+boot();
+setInterval(() => { api('/api/status').then(s => { S.status = s; renderEnv(); renderSessionMeta(); }).catch(()=>{}); }, 5000);
+
+function renderSessionMeta(){
+  if (S.status && S.status.session) {
+    $('sessRot').textContent = S.status.session.rotations ? 'rotated ×' + S.status.session.rotations : 'fresh';
+  }
+}
 </script>
 </body>
 </html>

@@ -8,8 +8,9 @@
     <color name="muted">#8B96AC</color>
     <color name="accent">#4D6BFE</color>
     <color name="accent_dim">#2B3A8F</color>
+    <color name="accent2">#8FA6FF</color>
     <color name="green">#2FD575</color>
     <color name="amber">#F5B942</color>
     <color name="red">#F45B69</color>
-    <color name="ic_launcher_background">#0B0E14</color>
+    <color name="ic_launcher_background">#121722</color>
 </resources>

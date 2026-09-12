@@ -3,6 +3,9 @@ package com.dshlocal.app;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
@@ -67,6 +70,14 @@ public class MainActivity extends Activity {
     private Animation pulse;
     private final Handler handler = new Handler(Looper.getMainLooper());
 
+    // session link card
+    private LinearLayout sessCard, sessLoading;
+    private TextView sessLinkView, sessState, sessDot;
+    private Button btnCopyLink, btnRotate;
+    private String cachedLink = null;
+    private String cachedToken = null;
+    private String terminalTokenLoaded = null;
+
     private final Runnable poll = new Runnable() {
         @Override public void run() {
             new Thread(() -> {
@@ -79,6 +90,7 @@ public class MainActivity extends Activity {
                 final long pMs = pUp ? (t2 - t1) : -1;
                 final String hState = readStatus("harness");
                 final String pState = readStatus("proxy");
+                final String link = hUp ? fetchSessionLink() : null;
                 handler.post(() -> {
                     applyServer("harness", hUp, hState, wantHarness, hMs,
                             statusDotH, statusTextH, statusSubH, btnHarness, btnOpenH,
@@ -87,6 +99,7 @@ public class MainActivity extends Activity {
                             statusDotP, statusTextP, statusSubP, btnProxy, btnOpenP,
                             "gateway + terminal", "http://127.0.0.1:8787");
                     applyEnv();
+                    applySession(hUp, link);
                 });
             }).start();
             handler.postDelayed(this, 3000);
@@ -141,16 +154,36 @@ public class MainActivity extends Activity {
         swOpenInApp = findViewById(R.id.swOpenInApp);
         etPin = findViewById(R.id.etPin);
         tvPinState = findViewById(R.id.tvPinState);
+        sessCard = findViewById(R.id.sessCard);
+        sessLoading = findViewById(R.id.sessLoading);
+        sessLinkView = findViewById(R.id.sessLink);
+        sessState = findViewById(R.id.sessState);
+        sessDot = findViewById(R.id.sessDot);
+        btnCopyLink = findViewById(R.id.btnCopyLink);
+        btnRotate = findViewById(R.id.btnRotate);
 
         btnHarness.setOnClickListener(v -> { haptic(); toggleServer("harness"); });
         btnProxy.setOnClickListener(v -> { haptic(); toggleServer("proxy"); });
-        btnOpenH.setOnClickListener(v -> openServer(HARNESS_PORT, false));
-        btnOpenP.setOnClickListener(v -> openServer(TERM_PORT, true));
+        btnOpenH.setOnClickListener(v -> openConsole());
+        btnOpenP.setOnClickListener(v -> openTerminal());
+
+        btnCopyLink.setOnClickListener(v -> {
+            haptic();
+            if (cachedLink == null) { toast("Link not ready yet"); return; }
+            ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            cm.setPrimaryClip(ClipData.newPlainText("dsh session link", cachedLink));
+            toast("Session link copied — paste it into any browser on this device");
+        });
+        btnRotate.setOnClickListener(v -> {
+            haptic();
+            rotateSession();
+        });
 
         tabDash.setOnClickListener(v -> { haptic(); setTab(0); });
         tabTerm.setOnClickListener(v -> { haptic(); setTab(1); ensureTerminal(); });
         tabSet.setOnClickListener(v -> { haptic(); setTab(2); });
 
+        swOpenInApp.setChecked(Prefs.openInApp(this));
         swOpenInApp.setOnCheckedChangeListener((b, checked) -> Prefs.setOpenInApp(this, checked));
         findViewById(R.id.btnSavePin).setOnClickListener(v -> {
             String p = etPin.getText().toString().trim();
@@ -166,6 +199,98 @@ public class MainActivity extends Activity {
             toast("PIN removed");
         });
         refreshPinUi();
+    }
+
+    private void rotateSession() {
+        new Thread(() -> {
+            String newLink = null;
+            try {
+                java.net.HttpURLConnection c = (java.net.HttpURLConnection)
+                        new java.net.URL("http://127.0.0.1:" + HARNESS_PORT + "/api/session/rotate").openConnection();
+                c.setRequestMethod("POST");
+                c.setDoOutput(true);
+                c.setRequestProperty("Authorization", "Bearer " + (cachedToken == null ? "" : cachedToken));
+                c.setConnectTimeout(1200);
+                c.setReadTimeout(1200);
+                c.getOutputStream().write("{}".getBytes("UTF-8"));
+                if (c.getResponseCode() == 200) {
+                    ByteArrayOutputStream bo = new ByteArrayOutputStream();
+                    try (InputStream in = c.getInputStream()) {
+                        byte[] b = new byte[2048];
+                        int n;
+                        while ((n = in.read(b)) > 0) bo.write(b, 0, n);
+                    }
+                    JSONObject o = new JSONObject(bo.toString("UTF-8"));
+                    newLink = o.optString("link", null);
+                    cachedToken = o.optString("token", cachedToken);
+                }
+            } catch (Exception ignored) {}
+            final String fl = newLink;
+            handler.post(() -> {
+                if (fl != null) {
+                    cachedLink = fl;
+                    sessLinkView.setText(fl);
+                    toast("Token rotated — old links no longer work");
+                } else {
+                    toast("Could not rotate — is the harness online?");
+                }
+            });
+        }).start();
+    }
+
+    /** Read the session link straight from the harness API (like the console URL dsh prints). */
+    private String fetchSessionLink() {
+        try {
+            java.net.HttpURLConnection c = (java.net.HttpURLConnection)
+                    new java.net.URL("http://127.0.0.1:" + HARNESS_PORT + "/api/session").openConnection();
+            c.setConnectTimeout(900);
+            c.setReadTimeout(900);
+            if (c.getResponseCode() != 200) return null;
+            ByteArrayOutputStream bo = new ByteArrayOutputStream();
+            try (InputStream in = c.getInputStream()) {
+                byte[] b = new byte[2048];
+                int n;
+                while ((n = in.read(b)) > 0) bo.write(b, 0, n);
+            }
+            JSONObject o = new JSONObject(bo.toString("UTF-8"));
+            cachedToken = o.optString("token", null);
+            return o.optString("link", null);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private void applySession(boolean up, String link) {
+        if (sessCard == null) return;
+        if (up && link != null) {
+            sessCard.setVisibility(View.VISIBLE);
+            sessLoading.setVisibility(View.GONE);
+            sessLinkView.setText(link);
+            cachedLink = link;
+            sessState.setText(R.string.session_active);
+            sessState.setTextColor(0xFF2FD575);
+            sessDot.setTextColor(0xFF2FD575);
+            btnCopyLink.setEnabled(true); btnCopyLink.setAlpha(1f);
+            btnRotate.setEnabled(true); btnRotate.setAlpha(1f);
+            // keep the in-app terminal authenticated with the current token
+            if (terminalWebView != null && cachedToken != null
+                    && !cachedToken.equals(terminalTokenLoaded)) {
+                terminalTokenLoaded = cachedToken;
+                terminalWebView.loadUrl("http://127.0.0.1:" + TERM_PORT + "/?token=" + cachedToken);
+            }
+        } else {
+            boolean starting = wantHarness && !up;
+            if (starting) {
+                sessCard.setVisibility(View.VISIBLE);
+                sessLoading.setVisibility(View.VISIBLE);
+                sessLinkView.setText("");
+                sessState.setText(R.string.session_booting);
+                sessState.setTextColor(0xFFF5B942);
+                sessDot.setTextColor(0xFFF5B942);
+            } else if (!bootstrapping && !wantHarness) {
+                sessCard.setVisibility(View.GONE);
+            }
+        }
     }
 
     private void haptic() {
@@ -239,6 +364,7 @@ public class MainActivity extends Activity {
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
         terminalWebView.setWebViewClient(new LocalAssetWebViewClient());
+        // load with the session token once known; reload automatically when the link arrives
         terminalWebView.loadUrl("http://127.0.0.1:" + TERM_PORT + "/");
         ViewGroup holder = findViewById(R.id.terminalContainer);
         holder.addView(terminalWebView, new ViewGroup.LayoutParams(
@@ -323,39 +449,59 @@ public class MainActivity extends Activity {
         }).start();
     }
 
-    private void openServer(int port, boolean terminal) {
+    private void openConsole() {
         new Thread(() -> {
-            boolean up = isUp(port);
+            final boolean up = isUp(HARNESS_PORT);
+            String l = up ? fetchSessionLink() : null;
+            if (l == null) l = "http://127.0.0.1:" + HARNESS_PORT + "/";
+            final String link = l;
             runOnUiThread(() -> {
-                if (!up) {
-                    toast("Server not online yet — press Start first");
-                    return;
-                }
-                if (Prefs.openInApp(this)) {
-                    openInApp(port);
-                } else {
-                    try {
-                        startActivity(new Intent(Intent.ACTION_VIEW,
-                                Uri.parse("http://127.0.0.1:" + port + "/")));
-                    } catch (Exception e) {
-                        toast("No browser found");
-                    }
-                }
+                if (!up) { toast("Harness not online yet — press Start first"); return; }
+                openUrl(link, "console");
             });
         }).start();
     }
 
+    private void openTerminal() {
+        new Thread(() -> {
+            final boolean up = isUp(TERM_PORT);
+            String flink = null;
+            if (up) {
+                if (cachedToken == null) fetchSessionLink();
+                flink = "http://127.0.0.1:" + TERM_PORT + "/?token=" + (cachedToken == null ? "" : cachedToken);
+            }
+            final String link = flink;
+            runOnUiThread(() -> {
+                if (!up) { toast("Terminal not online yet — start the Proxy Gateway first"); return; }
+                openUrl(link, "terminal");
+            });
+        }).start();
+    }
+
+    private void openUrl(String url, String what) {
+        if (Prefs.openInApp(this)) {
+            openInApp(url, what);
+        } else {
+            try {
+                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+            } catch (Exception e) {
+                toast("No browser found");
+            }
+        }
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
-    private void openInApp(int port) {
+    private void openInApp(String url, String what) {
         WebView web = new WebView(this);
         web.setBackgroundColor(Color.parseColor("#0B0E14"));
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
         web.setWebViewClient(new LocalAssetWebViewClient());
-        web.loadUrl("http://127.0.0.1:" + port + "/");
+        web.loadUrl(url);
 
         AlertDialog dlg = new AlertDialog.Builder(this, android.R.style.Theme_Material_NoActionBar)
+                .setTitle(("console".equals(what) ? "DSH Console" : "Terminal"))
                 .setView(web)
                 .setPositiveButton("Close", null)
                 .create();

@@ -192,17 +192,23 @@ async function main() {
   });
   await Promise.all(workers);
 
-  // 3. Tree → commit → main
+  // 3. Tree → commit → main (on top of existing history when present)
   const { sha: treeSha } = await gh(`/repos/${full}/git/trees`, {
     method: "POST",
     body: JSON.stringify({ tree }),
   });
+  let parents = [];
+  try {
+    const ref = await gh(`/repos/${full}/git/ref/heads/main`);
+    if (ref && ref.object && ref.object.sha) parents = [ref.object.sha];
+  } catch (e) { /* empty repo — no parent */ }
   const { sha: commitSha } = await gh(`/repos/${full}/git/commits`, {
     method: "POST",
     body: JSON.stringify({
       message:
-        "DSH Local v2.5.1 — standalone native APK (embedded Linux, dsh console, gateway, terminal)",
+        "DSH Local v2.6.0 — session-token auth, 13/9/8/8 catalog, dashboard session link",
       tree: treeSha,
+      parents,
     }),
   });
   try {

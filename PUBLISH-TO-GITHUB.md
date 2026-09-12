@@ -24,7 +24,7 @@ In the unpacked project folder, run:
 git init -b main
 
 git add -A
-git commit -m "DSH Local v2.5.1 — standalone native APK (embedded Linux, dsh console, gateway, terminal)"
+git commit -m "DSH Local v2.6.0 — standalone native APK (session-token auth, dsh console, gateway, terminal)"
 
 git remote add origin https://github.com/<YOUR-USERNAME>/dsh-local.git
 git push -u origin main
@@ -36,8 +36,8 @@ Or with the GitHub CLI: `gh repo create dsh-local --public --source=. --push`
 
 ## What gets pushed
 
-- `apk/` — full native app source, build script, assets (incl. the 30 MB Termux bootstrap), 43-assertion smoke test
-- `public/downloads/dsh-local-v2.5.1.apk` — the signed release build
+- `apk/` — full native app source, build script, assets (incl. the 30 MB Termux bootstrap), 61-assertion smoke test
+- `public/downloads/dsh-local-v2.6.0.apk` — the signed release build
 - `src/` — the single static product/download page (no backend)
 - `README.md`, `PUBLISH-TO-GITHUB.md`
 
@@ -47,8 +47,8 @@ Or with the GitHub CLI: `gh repo create dsh-local --public --source=. --push`
 
 Instead of committing the 30 MB APK into git, you can tag a release and attach the APK:
 
-1. Remove it from tracking: `git rm --cached public/downloads/dsh-local-v2.5.1.apk` and add `public/downloads` to `.gitignore`
-2. `git tag v2.5.1 && git push origin main --tags`
-3. On GitHub → **Releases** → **Draft a new release** → pick tag `v2.5.1` → drag in the APK → publish
+1. Remove it from tracking: `git rm --cached public/downloads/dsh-local-v2.6.0.apk` and add `public/downloads` to `.gitignore`
+2. `git tag v2.6.0 && git push origin main --tags`
+3. On GitHub → **Releases** → **Draft a new release** → pick tag `v2.6.0` → drag in the APK → publish
 
 This gives users a clean `/releases` download page with checksums.

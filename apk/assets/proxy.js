@@ -21,6 +21,29 @@ const HOME = process.env.HOME || '/data/data/com.dshlocal.app/files/home';
 const WEB = path.join(HOME, 'web');
 const CONFIG = path.join(HOME, 'gateway.json');
 
+// ---- session auth (shared with dsh-web.js: $HOME/dsh-data/session.json) ----
+const SESSION_FILE = path.join(HOME, 'dsh-data', 'session.json');
+function sessionToken() {
+  try { return JSON.parse(fs.readFileSync(SESSION_FILE, 'utf8')).token; }
+  catch (e) { return null; }
+}
+function tokenOk(req, u) {
+  const tok = sessionToken();
+  if (!tok) return true; // session not provisioned yet — fail open until harness boots
+  const auth = req.headers['authorization'] || '';
+  if (auth.replace(/^Bearer\s+/i, '') === tok) return true;
+  if ((req.headers['x-dsh-token'] || '') === tok) return true;
+  return u.searchParams.get('token') === tok;
+}
+const LOCKED_PAGE = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+  + '<style>body{background:#0B0E14;color:#E8EDF7;font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center;padding:24px}'
+  + 'div{max-width:420px}h2{font-size:18px;margin:0 0 8px}p{color:#8B96AC;font-size:13px;line-height:1.6}'
+  + 'code{color:#8FA6FF;background:#1A2130;border:1px solid #263043;border-radius:8px;padding:2px 8px;font-size:12px}</style></head><body>'
+  + '<div><h2>🔒 Terminal locked</h2>'
+  + '<p>This terminal is protected by the DSH session token.</p>'
+  + '<p>Open it through the console link on the dashboard, or add <code>?token=…</code> to the URL.</p></div>'
+  + '</body></html>';
+
 function loadCfg() {
   try { return JSON.parse(fs.readFileSync(CONFIG, 'utf8')); } catch (e) { return {}; }
 }
@@ -65,6 +88,17 @@ function startShell() {
 
 const termServer = http.createServer((req, res) => {
   const u = new URL(req.url, 'http://x');
+  // session gate: every terminal route requires the shared token
+  if (!tokenOk(req, u)) {
+    if (u.pathname === '/' || u.pathname === '/terminal.html') {
+      res.writeHead(401, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(LOCKED_PAGE);
+    } else {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'unauthorized — open the terminal via the session link' }));
+    }
+    return;
+  }
   if (u.pathname === '/input' && req.method === 'POST') {
     let b = '';
     req.on('data', d => { b += d; });
@@ -99,17 +133,19 @@ termServer.listen(TERM_PORT, '127.0.0.1', () => {
 // ---------------------------------------------------------------- gateway (8787)
 const gate = http.createServer((req, res) => {
   const cfg = loadCfg();
+  const gu = new URL(req.url, 'http://x');
+  const gpath = gu.pathname;
 
-  if (req.url === '/healthz') { res.writeHead(200); res.end('ok'); return; }
+  if (gpath === '/healthz') { res.writeHead(200); res.end('ok'); return; }
 
-  if (req.url === '/v1/models' && req.method === 'GET') {
+  if (gpath === '/v1/models' && req.method === 'GET') {
     const ids = (cfg.models && cfg.models.length) ? cfg.models : ['local-harness'];
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ object: 'list', data: ids.map(id => ({ id: id, object: 'model', owned_by: 'dsh-local' })) }));
     return;
   }
 
-  if (req.method === 'POST' && req.url.indexOf('/v1/chat/completions') === 0) {
+  if (req.method === 'POST' && gpath.indexOf('/v1/chat/completions') === 0) {
     const auth = req.headers['authorization'] || '';
     const key = auth.replace(/^Bearer\s+/i, '');
     const keys = cfg.apiKeys || [];

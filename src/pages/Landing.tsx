@@ -22,7 +22,7 @@ import {
   Zap,
 } from "lucide-react";
 
-const APK_VERSION = "v2.5.1";
+const APK_VERSION = "v2.6.0";
 const APK_FILE = `/downloads/dsh-local-${APK_VERSION}.apk`;
 
 const fadeUp = {
@@ -356,8 +356,9 @@ export default function Landing() {
         >
           <p className="text-sm font-medium">Included with the console</p>
           {[
+            "Tokenized session links — the console opens only through the link, rotate anytime",
             "4 real dsh presets + a full Custom studio (profiles, import/export)",
-            "Plugins, skills, MCPs and integrations with per-tool wiring tests",
+            "13 plugins, 9 skills, 8 MCPs, 8 integrations with per-tool wiring tests",
             "Tool search and detail sheets for every capability",
             "PIN privacy, in-app or Chrome opening, foreground-service keepalive",
           ].map((li) => (
@@ -385,8 +386,8 @@ export default function Landing() {
               </h3>
               <p className="mt-1 max-w-md text-sm leading-relaxed text-muted-foreground">
                 Embedded Linux · DeepSeek Harness console · OpenAI-compatible
-                gateway · real terminal · PIN privacy. Everything runs on
-                127.0.0.1, nothing runs in the cloud.
+                gateway · real terminal · tokenized session links · 30+ agent
+                tools. Everything runs on 127.0.0.1, nothing runs in the cloud.
               </p>
               <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
                 <ShieldCheck className="size-3.5 text-primary" />

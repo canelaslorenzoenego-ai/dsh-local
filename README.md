@@ -4,10 +4,11 @@ A fully standalone native Android APK — **no web backend, no cloud, no account
 
 ## What this project is
 
-The deliverable is `public/downloads/dsh-local-v2.5.1.apk`: a native Java Android app (`com.dshlocal.app`) that carries an entire agent stack inside a single install:
+The deliverable is `public/downloads/dsh-local-v2.6.0.apk`: a native Java Android app (`com.dshlocal.app`) that carries an entire agent stack inside a single install:
 
 - **Embedded Linux** — the official Termux bootstrap (aarch64) is unpacked into app-private storage on first launch (staging → symlinks → atomic rename → apt/dpkg path rewriting). No Termux install, no F-Droid, no root.
-- **DeepSeek Harness console** (`127.0.0.1:3080`) — dsh's real agent presets (Standard, PTC, Minimal, Creator), a full Custom preset studio, plugins, skills, MCPs, integrations, tool search and detail views.
+- **DeepSeek Harness console** (`127.0.0.1:3080`) — dsh's real agent presets (Standard, PTC, Minimal, Creator), a full Custom preset studio, 13 plugins, 9 skills, 8 MCPs, 8 integrations, tool search and detail views.
+- **Tokenized session links** — the real `dsh web` auth model: starting the harness generates a session token, the console opens only through the tokenized link (shown on the dashboard), and Rotate kills every copy instantly. The terminal shares the same gate.
 - **Proxy gateway** (`127.0.0.1:8787`) — OpenAI-compatible `/v1/models` + streaming `/v1/chat/completions`, configurable via `~/gateway.json`.
 - **Terminal** (`127.0.0.1:8788`) — real bash login shell in xterm.js, works in-app and in Chrome.
 - **Native dashboard** — two Start/Stop buttons (that's it), PIN privacy with screenshot blocking, open-in-app or browser toggle, foreground-service keepalive.
@@ -18,7 +19,7 @@ All native sources live under `apk/`:
 
 ```
 apk/
-├── AndroidManifest.xml          # com.dshlocal.app, targetSdk 28 (W^X bypass), v2.5.1
+├── AndroidManifest.xml          # com.dshlocal.app, targetSdk 28 (W^X bypass), v2.6.0
 ├── build.sh                     # aapt2 → javac → d8 → zipalign → apksigner pipeline
 ├── src/com/dshlocal/app/        # MainActivity, ServerService, BootstrapInstaller, Prefs
 ├── assets/
@@ -28,14 +29,14 @@ apk/
 │   ├── setup.sh / provision.sh  # node install + toolchain provisioning
 │   └── web/                     # console SPA + terminal (xterm.js)
 ├── res/                         # layouts, drawables, animations (pulse/slide/fade)
-└── test/smoke.cjs               # 43-assertion end-to-end server test
+└── test/smoke.cjs               # 61-assertion end-to-end server test
 ```
 
 ## Building / testing the APK
 
 ```bash
 bash apk/build.sh              # builds + signs → apk/build/dsh-local.apk
-node apk/test/smoke.cjs        # boots both servers, runs all 43 assertions
+node apk/test/smoke.cjs        # boots both servers, runs all 61 assertions
 ```
 
 The build script downloads the Android SDK toolchain (aapt2, d8, apksigner, android.jar) into `$HOME/android-sdk` on first run if missing.
@@ -62,3 +63,4 @@ The build script downloads the Android SDK toolchain (aapt2, d8, apksigner, andr
 | v2.3.1 | dsh's real presets (Standard / PTC / Minimal / Creator) |
 | v2.4.0 | Custom preset studio + provisioned container |
 | v2.5.1 | Animations, tool search/info, 43/43 smoke test green |
+| v2.6.0 | Session-token auth (dsh tokenized links), catalog 13/9/8/8, dashboard session card — 61/61 green |
