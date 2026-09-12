@@ -36,7 +36,7 @@ repair_apt() {
   fi
   # 3) apt.conf written by very old installers lacks Dir/Methods mapping
   if [ -f "$PREFIX/etc/apt/apt.conf" ] && ! grep -q 'Dir::Bin::Methods' "$PREFIX/etc/apt/apt.conf" 2>/dev/null; then
-    printf 'Dir::Bin::Methods "%s/lib/apt/methods/";\n' "$PREFIX" >> "$PREFIX/etc/apt/apt.conf"
+    printf 'Dir::Bin::Methods "%s/lib/apt/methods/";\\n' "$PREFIX" >> "$PREFIX/etc/apt/apt.conf"
   fi
 }
 
@@ -58,49 +58,58 @@ install_node() {
     echo "[setup] apt update failed — last lines:"; tail -4 $HOME/.apt-update.log 2>/dev/null
   fi
   # ---- fallback: direct download with curl (no apt involved) ----
-  # curl + the CA bundle ship in the bootstrap, so this path needs neither apt
-  # nor dpkg's database. The exact Termux nodejs deb is fetched over https and
-  # unpacked with the bootstrap's own dpkg-deb/tar.
   echo "[setup] step 3/3: apt unavailable — trying direct package download…"
   if install_node_direct; then return 0; fi
   echo "[setup] ALL install paths failed — dump of apt update log:"
   tail -6 $HOME/.apt-update.log 2>/dev/null
+  echo "[setup] curl log:"; tail -6 $HOME/.curl-node.log 2>/dev/null
   return 1
 }
 
 install_node_direct() {
   apt_env
-  # Pull the SAME deb the Termux repo would serve, straight over https with the
-  # bootstrap's curl + CA bundle, and unpack it into the prefix with dpkg-deb
-  # (both ship in the bootstrap — no apt, no signature dance, no repo state).
-  # deps (libc++, openssl, icu, zlib, c-ares, libffi) are all present in the
-  # bootstrap already; nodejs is the only missing piece.
-  local REPO="http://packages-cf.termux.dev/apt/termux-main"
+  # Pull the Termux nodejs deb over https with the bootstrap's curl + CA bundle,
+  # and unpack it into the prefix with dpkg-deb/tar (both ship in bootstrap).
+  local REPO="https://packages-cf.termux.dev/apt/termux-main"
   local TMP=$HOME/.node-dl
   mkdir -p "$TMP"
   echo "[setup] fetching Termux package index…"
   local FNAME
-  FNAME=$(curl -fsSL --retry 2 --max-time 120 "$REPO/dists/stable/main/binary-aarch64/Packages" 2>>$HOME/.curl-node.log \
-    | awk '/^Package: nodejs$/{f=1} f&&/^Filename: /{print $2; exit}')
+  # Try gzipped Packages first
+  FNAME=$(curl -fsSL --retry 3 --max-time 180 "$REPO/dists/stable/main/binary-aarch64/Packages.gz" 2>>$HOME/.curl-node.log \
+    | gzip -d 2>/dev/null \
+    | awk '/^Package: nodejs$/{f=1} f&&/^Filename: /{print $2; exit}') 2>>$HOME/.curl-node.log
   if [ -z "$FNAME" ]; then
-    echo "[setup] could not resolve nodejs package — last lines:"; tail -3 $HOME/.curl-node.log
+    # Try uncompressed Packages as fallback
+    FNAME=$(curl -fsSL --retry 3 --max-time 180 "$REPO/dists/stable/main/binary-aarch64/Packages" 2>>$HOME/.curl-node.log \
+      | awk '/^Package: nodejs$/{f=1} f&&/^Filename: /{print $2; exit}') 2>>$HOME/.curl-node.log
+  fi
+  if [ -z "$FNAME" ]; then
+    echo "[setup] could not resolve nodejs package — last lines:"; tail -5 $HOME/.curl-node.log
+    echo "[setup] URL tried: $REPO/dists/stable/main/binary-aarch64/Packages"
     return 1
   fi
   echo "[setup] downloading nodejs ($FNAME)…"
   if ! curl -fSL --retry 3 --max-time 600 -o "$TMP/node.deb" "$REPO/$FNAME" >>$HOME/.curl-node.log 2>&1; then
-    echo "[setup] download failed — last lines:"; tail -3 $HOME/.curl-node.log
+    echo "[setup] download failed — last lines:"; tail -5 $HOME/.curl-node.log
     return 1
   fi
   echo "[setup] unpacking into prefix…"
   # Termux debs carry absolute com.termux paths (./data/data/com.termux/files/usr/…).
-  # dpkg-deb streams the data tarball; strip the leading components (./ data data
-  # com.termux files usr) so the payload lands directly in $PREFIX — bin/, lib/,
-  # include/, share/ end up beside the bootstrap's own.
-  "$PREFIX/bin/dpkg-deb" --fsys-tarfile "$TMP/node.deb" \
-    | "$PREFIX/bin/tar" -xJ --strip-components=6 -C "$PREFIX" 2>>$HOME/.curl-node.log || {
-    echo "[setup] unpack failed — last lines:"; tail -3 $HOME/.curl-node.log
-    return 1;
-  }
+  # dpkg-deb streams the data tarball; strip the leading components.
+  if [ ! -x "$PREFIX/bin/dpkg-deb" ]; then
+    echo "[setup] dpkg-deb not found — trying tar directly"
+    "$PREFIX/bin/tar" -xJf "$TMP/node.deb" --strip-components=6 -C "$PREFIX" 2>>$HOME/.curl-node.log || {
+      echo "[setup] unpack failed — last lines:"; tail -5 $HOME/.curl-node.log
+      return 1;
+    }
+  else
+    "$PREFIX/bin/dpkg-deb" --fsys-tarfile "$TMP/node.deb" \
+      | "$PREFIX/bin/tar" -xJ --strip-components=6 -C "$PREFIX" 2>>$HOME/.curl-node.log || {
+      echo "[setup] unpack failed — last lines:"; tail -5 $HOME/.curl-node.log
+      return 1;
+    }
+  fi
   rm -rf "$TMP"
   command -v node >/dev/null 2>&1 || { echo "[setup] node binary did not run after unpack"; return 1; }
   echo "[setup] node $(node -v) installed via direct package download"
@@ -112,7 +121,7 @@ case "$1" in
     # The gateway needs node too — don't depend on the harness having run first.
     if ! command -v node >/dev/null 2>&1; then
       echo "[proxy] node missing — installing (first run, ~1-2 min)"
-      install_node || { echo "[proxy] ERROR: node install failed — start the Harness first or check Terminal"; exit 1; }
+      install_node || { echo "[proxy] ERROR: node install failed — check Terminal tab for details"; exit 1; }
     fi
     echo "[proxy] provisioning container in background (bash, git, python, jq, ripgrep)"
     sh $HOME/provision.sh >/dev/null 2>&1 &
@@ -120,7 +129,7 @@ case "$1" in
     exec node proxy.js
     ;;
   harness)
-    install_node || { echo "[setup] ERROR: node install failed"; exit 1; }
+    install_node || { echo "[setup] ERROR: node install failed — check Terminal tab for details"; exit 1; }
     if ! command -v node >/dev/null 2>&1; then
       echo "[setup] ERROR: node install failed"
       exit 1

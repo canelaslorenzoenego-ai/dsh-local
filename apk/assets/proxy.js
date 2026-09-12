@@ -22,8 +22,6 @@ const WEB = path.join(HOME, 'web');
 const CONFIG = path.join(HOME, 'gateway.json');
 
 // ---- session auth (shared with dsh-web.js: $HOME/dsh-data/session.json) ----
-// FAIL-CLOSED: if the harness hasn't minted a session yet, the proxy mints one
-// itself (same file, same shape) — the terminal is never token-less.
 const SESSION_FILE = path.join(HOME, 'dsh-data', 'session.json');
 function sessionToken() {
   try { return JSON.parse(fs.readFileSync(SESSION_FILE, 'utf8')).token; }
@@ -40,7 +38,7 @@ function sessionToken() {
 }
 function tokenOk(req, u) {
   const tok = sessionToken();
-  if (!tok) return false; // fail closed
+  if (!tok) return false;
   const auth = req.headers['authorization'] || '';
   if (auth.replace(/^Bearer\s+/i, '') === tok) return true;
   if ((req.headers['x-dsh-token'] || '') === tok) return true;
@@ -79,11 +77,10 @@ function ringSince(s) {
 
 function startShell() {
   const pref = process.env.PREFIX;
-  // prefer bash as a login shell (profile, aliases, workspace cwd) when provisioned
   const bashBin = pref + '/bin/bash';
   const shBin = fs.existsSync(bashBin) ? bashBin : pref + '/bin/sh';
   const scriptBin = pref + '/bin/script';
-  const useScript = fs.existsSync(scriptBin); // util-linux script => real pty
+  const useScript = fs.existsSync(scriptBin);
   const cmd = useScript
     ? [scriptBin, '-qfc', shBin + ' -l', '/dev/null']
     : [shBin, '-i'];
@@ -99,7 +96,6 @@ function startShell() {
 
 const termServer = http.createServer((req, res) => {
   const u = new URL(req.url, 'http://x');
-  // session gate: every terminal route requires the shared token
   if (!tokenOk(req, u)) {
     if (u.pathname === '/' || u.pathname === '/terminal.html') {
       res.writeHead(401, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -126,7 +122,6 @@ const termServer = http.createServer((req, res) => {
     res.end(JSON.stringify(out));
     return;
   }
-  // URLs are /web/<file>; serve from WEB root with the /web/ prefix stripped.
   const f = u.pathname === '/' ? 'terminal.html'
     : u.pathname.replace(/\.\./g, '').replace(/^\/+/, '').replace(/^web\//, '');
   fs.readFile(path.join(WEB, f), (e, d) => {
@@ -136,6 +131,13 @@ const termServer = http.createServer((req, res) => {
   });
 });
 
+// FIXED: Add error handler before listen
+termServer.on('error', (e) => {
+  console.error('terminal server error:', e.message);
+  if (e.code === 'EADDRINUSE') console.error('terminal port ' + TERM_PORT + ' already in use');
+  else if (e.code === 'EACCES') console.error('terminal port ' + TERM_PORT + ' permission denied');
+  process.exit(1);
+});
 termServer.listen(TERM_PORT, '127.0.0.1', () => {
   console.log('terminal server on 127.0.0.1:' + TERM_PORT);
   startShell();
@@ -170,7 +172,7 @@ const gate = http.createServer((req, res) => {
     req.on('data', d => {
       if (over) return;
       body += d;
-      if (body.length > 10 * 1024 * 1024) { over = true; body = ''; } // 10 MB cap
+      if (body.length > 10 * 1024 * 1024) { over = true; body = ''; }
     });
     req.on('end', () => {
       if (over) {
@@ -244,4 +246,11 @@ function localReply(j, res) {
   }
 }
 
+// FIXED: Add error handler before listen
+gate.on('error', (e) => {
+  console.error('gateway error:', e.message);
+  if (e.code === 'EADDRINUSE') console.error('gateway port ' + GATE_PORT + ' already in use');
+  else if (e.code === 'EACCES') console.error('gateway port ' + GATE_PORT + ' permission denied');
+  process.exit(1);
+});
 gate.listen(GATE_PORT, '127.0.0.1', () => console.log('gateway on 127.0.0.1:' + GATE_PORT));

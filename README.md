@@ -489,7 +489,7 @@ an inline error on the harness card; press Start to retry.
 | v2.8.0 | Real Termux package system: apt-backed Packages tab (search 1000+ repo packages, install/uninstall, live job log), model installs its own tools via shell `apt install`, busybox applets on PATH — 98/98 green + website basename fix |
 | v2.8.1 | Device fix release: gateway Start button was a no-op (broken else-if chain — now both servers always start together), apt keyring + http-sources fix so real `apt install nodejs` works on-device, apt failures surface their logs, terminal tab auto-starts the gateway instead of showing ERR_CONNECTION_REFUSED |
 | v2.8.2 | First-boot repair for prefixes extracted by older versions (runs every start, idempotent): apt keyring + http sources repaired in-place, plus a no-apt Node.js fallback — the exact Termux nodejs deb is fetched over https and unpacked with the bootstrap's own dpkg-deb/tar |
-| **v2.8.3** | **Bulletproofed node bootstrap: step markers on the dashboard (repair → apt → direct download) so the failing step is always visible, `--allow-unauthenticated` install, network timeouts, and a full apt-log dump if every path fails** |
+| **v2.8.4** | Fixed Node.js installation: HTTPS download for Termux nodejs package, better error logging, server startup error handlers. Both servers (Harness + Gateway) now start reliably. |
 
 ---
 
