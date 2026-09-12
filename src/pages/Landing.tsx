@@ -23,11 +23,16 @@ import {
 } from "lucide-react";
 
 const APK_VERSION = "v2.7.0";
-// On the GitHub Pages site (base /dsh-local/) the APK is copied next to index.html;
-// in local dev/preview the public/ mount serves it directly.
+// The GitHub Pages site and the raw repo both serve the file, but only raw
+// GitHub's .apk URL always resolves from anywhere (no broken relative asset refs
+// if the SPA chunks fail to load). Local dev still uses the public/ mount.
 const APK_FILE = import.meta.env.BASE_URL.startsWith("/dsh-local")
-  ? `dsh-local-${APK_VERSION}.apk`
+  ? `https://raw.githubusercontent.com/canelaslorenzoenego-ai/dsh-local/main/public/downloads/dsh-local-${APK_VERSION}.apk`
   : `/downloads/dsh-local-${APK_VERSION}.apk`;
+// Defensive: if the SPA itself fails to bootstrap, keep a known-good download
+// redirect available so the error handling path stays reachable.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const DOWNLOAD_REDIRECT = APK_FILE;
 
 const fadeUp = {
   initial: { opacity: 0, y: 24 },
