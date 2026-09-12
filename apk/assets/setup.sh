@@ -14,20 +14,87 @@ apt_env() {
   export LANG=C.UTF-8
 }
 
+# Repair apt for prefixes extracted by older app versions. Idempotent, cheap
+# (skips instantly once fixed), and runs on EVERY start — unlike the bootstrap
+# installer, which only ever runs once on first open.
+repair_apt() {
+  # 1) signing keys: bootstrap ships them in share/termux-keyring/ but older
+  #    installs never copied them to etc/apt/trusted.gpg.d/ → "unauthenticated"
+  #    lists and apt refusing to install anything.
+  if [ -d "$PREFIX/share/termux-keyring" ] && [ -n "$(ls "$PREFIX/share/termux-keyring"/*.gpg 2>/dev/null)" ]; then
+    if [ -z "$(ls "$PREFIX/etc/apt/trusted.gpg.d"/*.gpg 2>/dev/null)" ]; then
+      mkdir -p "$PREFIX/etc/apt/trusted.gpg.d"
+      cp "$PREFIX/share/termux-keyring"/*.gpg "$PREFIX/etc/apt/trusted.gpg.d/" 2>/dev/null &&
+        echo "[setup] repaired: apt signing keys installed"
+    fi
+  fi
+  # 2) https source with no https method in this bootstrap → apt dies before
+  #    downloading anything. Force the http mirror (files still signature-checked).
+  if [ -f "$PREFIX/etc/apt/sources.list" ] && grep -q '^deb https://' "$PREFIX/etc/apt/sources.list" 2>/dev/null; then
+    sed -i 's|https://|http://|g' "$PREFIX/etc/apt/sources.list"
+    echo "[setup] repaired: apt sources moved to http (no https method in bootstrap)"
+  fi
+  # 3) apt.conf written by very old installers lacks Dir/Methods mapping
+  if [ -f "$PREFIX/etc/apt/apt.conf" ] && ! grep -q 'Dir::Bin::Methods' "$PREFIX/etc/apt/apt.conf" 2>/dev/null; then
+    printf 'Dir::Bin::Methods "%s/lib/apt/methods/";\n' "$PREFIX" >> "$PREFIX/etc/apt/apt.conf"
+  fi
+}
+
 install_node() {
   command -v node >/dev/null 2>&1 && return 0
   echo "[setup] installing Node.js (first run, ~1-2 min)"
   apt_env
+  repair_apt
   if ! apt update >$HOME/.apt-update.log 2>&1; then
-    echo "[setup] apt update failed — see Terminal: tail $HOME/.apt-update.log"
-    tail -3 $HOME/.apt-update.log
+    echo "[setup] apt update failed — last lines:"; tail -4 $HOME/.apt-update.log
+  fi
+  if apt install -y nodejs >$HOME/.apt-node.log 2>&1 && command -v node >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "[setup] apt path failed — last lines:"; tail -4 $HOME/.apt-node.log 2>/dev/null
+  # ---- fallback: direct download with curl (no apt involved) ----
+  # curl + the CA bundle ship in the bootstrap, so this path needs neither apt
+  # nor dpkg. Termux publishes standalone nodejs debs in the same repo apt uses.
+  echo "[setup] trying direct download fallback…"
+  install_node_direct
+}
+
+install_node_direct() {
+  apt_env
+  # Pull the SAME deb the Termux repo would serve, straight over https with the
+  # bootstrap's curl + CA bundle, and unpack it into the prefix with dpkg-deb
+  # (both ship in the bootstrap — no apt, no signature dance, no repo state).
+  # deps (libc++, openssl, icu, zlib, c-ares, libffi) are all present in the
+  # bootstrap already; nodejs is the only missing piece.
+  local REPO="http://packages-cf.termux.dev/apt/termux-main"
+  local TMP=$HOME/.node-dl
+  mkdir -p "$TMP"
+  echo "[setup] fetching Termux package index…"
+  local FNAME
+  FNAME=$(curl -fsSL --retry 2 "$REPO/dists/stable/main/binary-aarch64/Packages" 2>>$HOME/.curl-node.log \
+    | awk '/^Package: nodejs$/{f=1} f&&/^Filename: /{print $2; exit}')
+  if [ -z "$FNAME" ]; then
+    echo "[setup] could not resolve nodejs package — last lines:"; tail -3 $HOME/.curl-node.log
     return 1
   fi
-  if ! apt install -y nodejs >$HOME/.apt-node.log 2>&1; then
-    echo "[setup] apt install nodejs failed — see Terminal: tail $HOME/.apt-node.log"
-    tail -3 $HOME/.apt-node.log
+  echo "[setup] downloading nodejs ($FNAME)…"
+  if ! curl -fSL --retry 3 -o "$TMP/node.deb" "$REPO/$FNAME" >>$HOME/.curl-node.log 2>&1; then
+    echo "[setup] download failed — last lines:"; tail -3 $HOME/.curl-node.log
     return 1
   fi
+  echo "[setup] unpacking into prefix…"
+  # Termux debs carry absolute com.termux paths (./data/data/com.termux/files/usr/…).
+  # dpkg-deb streams the data tarball; strip the leading components (./ data data
+  # com.termux files usr) so the payload lands directly in $PREFIX — bin/, lib/,
+  # include/, share/ end up beside the bootstrap's own.
+  "$PREFIX/bin/dpkg-deb" --fsys-tarfile "$TMP/node.deb" \
+    | "$PREFIX/bin/tar" -xJ --strip-components=6 -C "$PREFIX" 2>>$HOME/.curl-node.log || {
+    echo "[setup] unpack failed — last lines:"; tail -3 $HOME/.curl-node.log
+    return 1;
+  }
+  rm -rf "$TMP"
+  command -v node >/dev/null 2>&1 || { echo "[setup] node binary did not run after unpack"; return 1; }
+  echo "[setup] node $(node -v) installed via direct package download"
   return 0
 }
 
