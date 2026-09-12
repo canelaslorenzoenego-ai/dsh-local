@@ -70,30 +70,43 @@ install_node_direct() {
   apt_env
   # Pull the Termux nodejs deb over https with the bootstrap's curl + CA bundle,
   # and unpack it into the prefix with dpkg-deb/tar (both ship in bootstrap).
-  local REPO="https://packages-cf.termux.dev/apt/termux-main"
+  # Try multiple mirrors in order: primary -> cf-cdn -> asia mirrors
+  local REPOS=(
+    "https://packages.termux.dev/apt/termux-main"
+    "https://packages-cf.termux.dev/apt/termux-main"
+    "https://mirror.freedif.org/termux/termux-main"
+    "https://mirror.meowsmp.net/termux/termux-main"
+  )
   local TMP=$HOME/.node-dl
   mkdir -p "$TMP"
   echo "[setup] fetching Termux package index…"
   local FNAME
-  # Try gzipped Packages first
-  FNAME=$(curl -fsSL --retry 3 --max-time 180 "$REPO/dists/stable/main/binary-aarch64/Packages.gz" 2>>$HOME/.curl-node.log \
-    | gzip -d 2>/dev/null \
-    | awk '/^Package: nodejs$/{f=1} f&&/^Filename: /{print $2; exit}') 2>>$HOME/.curl-node.log
-  if [ -z "$FNAME" ]; then
-    # Try uncompressed Packages as fallback
-    FNAME=$(curl -fsSL --retry 3 --max-time 180 "$REPO/dists/stable/main/binary-aarch64/Packages" 2>>$HOME/.curl-node.log \
+  local tried=0
+  for REPO in "${REPOS[@]}"; do
+    tried=1
+    echo "[setup] trying mirror: $REPO"
+    # Try gzipped Packages first
+    FNAME=$(curl -fsSL --retry 2 --max-time 120 "$REPO/dists/stable/main/binary-aarch64/Packages.gz" 2>>$HOME/.curl-node.log \
+      | gzip -d 2>/dev/null \
       | awk '/^Package: nodejs$/{f=1} f&&/^Filename: /{print $2; exit}') 2>>$HOME/.curl-node.log
-  fi
+    if [ -n "$FNAME" ]; then break; fi
+    # Try uncompressed Packages as fallback
+    FNAME=$(curl -fsSL --retry 2 --max-time 120 "$REPO/dists/stable/main/binary-aarch64/Packages" 2>>$HOME/.curl-node.log \
+      | awk '/^Package: nodejs$/{f=1} f&&/^Filename: /{print $2; exit}') 2>>$HOME/.curl-node.log
+    if [ -n "$FNAME" ]; then break; fi
+  done
   if [ -z "$FNAME" ]; then
-    echo "[setup] could not resolve nodejs package — last lines:"; tail -5 $HOME/.curl-node.log
-    echo "[setup] URL tried: $REPO/dists/stable/main/binary-aarch64/Packages"
+    echo "[setup] could not resolve nodejs package from any mirror"
+    echo "[setup] last curl log:"; tail -10 $HOME/.curl-node.log
     return 1
   fi
+  echo "[setup] resolved nodejs from $REPO"
   echo "[setup] downloading nodejs ($FNAME)…"
   if ! curl -fSL --retry 3 --max-time 600 -o "$TMP/node.deb" "$REPO/$FNAME" >>$HOME/.curl-node.log 2>&1; then
     echo "[setup] download failed — last lines:"; tail -5 $HOME/.curl-node.log
     return 1
   fi
+  echo "[setup] downloaded $(ls -lh $TMP/node.deb | awk '{print $5}') from $REPO"
   echo "[setup] unpacking into prefix…"
   # Termux debs carry absolute com.termux paths (./data/data/com.termux/files/usr/…).
   # dpkg-deb streams the data tarball; strip the leading components.
