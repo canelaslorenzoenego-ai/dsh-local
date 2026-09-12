@@ -41,22 +41,31 @@ repair_apt() {
 }
 
 install_node() {
-  command -v node >/dev/null 2>&1 && return 0
-  echo "[setup] installing Node.js (first run, ~1-2 min)"
+  command -v node >/dev/null 2>&1 && { echo "[setup] node already present"; return 0; }
+  echo "[setup] step 1/3: repairing apt config…"
   apt_env
   repair_apt
-  if ! apt update >$HOME/.apt-update.log 2>&1; then
-    echo "[setup] apt update failed — last lines:"; tail -4 $HOME/.apt-update.log
+  echo "[setup] step 2/3: apt update + install…"
+  # coreutils' timeout may be missing on odd prefixes — run plain then
+  if command -v timeout >/dev/null 2>&1; then T=timeout; else T=""; fi
+  if ${T:+$T 600} apt update >$HOME/.apt-update.log 2>&1; then
+    if ${T:+$T 900} apt install -y --allow-unauthenticated nodejs >$HOME/.apt-node.log 2>&1 && command -v node >/dev/null 2>&1; then
+      echo "[setup] node installed via apt"
+      return 0
+    fi
+    echo "[setup] apt install failed — last lines:"; tail -4 $HOME/.apt-node.log 2>/dev/null
+  else
+    echo "[setup] apt update failed — last lines:"; tail -4 $HOME/.apt-update.log 2>/dev/null
   fi
-  if apt install -y nodejs >$HOME/.apt-node.log 2>&1 && command -v node >/dev/null 2>&1; then
-    return 0
-  fi
-  echo "[setup] apt path failed — last lines:"; tail -4 $HOME/.apt-node.log 2>/dev/null
   # ---- fallback: direct download with curl (no apt involved) ----
   # curl + the CA bundle ship in the bootstrap, so this path needs neither apt
-  # nor dpkg. Termux publishes standalone nodejs debs in the same repo apt uses.
-  echo "[setup] trying direct download fallback…"
-  install_node_direct
+  # nor dpkg's database. The exact Termux nodejs deb is fetched over https and
+  # unpacked with the bootstrap's own dpkg-deb/tar.
+  echo "[setup] step 3/3: apt unavailable — trying direct package download…"
+  if install_node_direct; then return 0; fi
+  echo "[setup] ALL install paths failed — dump of apt update log:"
+  tail -6 $HOME/.apt-update.log 2>/dev/null
+  return 1
 }
 
 install_node_direct() {
@@ -71,14 +80,14 @@ install_node_direct() {
   mkdir -p "$TMP"
   echo "[setup] fetching Termux package index…"
   local FNAME
-  FNAME=$(curl -fsSL --retry 2 "$REPO/dists/stable/main/binary-aarch64/Packages" 2>>$HOME/.curl-node.log \
+  FNAME=$(curl -fsSL --retry 2 --max-time 120 "$REPO/dists/stable/main/binary-aarch64/Packages" 2>>$HOME/.curl-node.log \
     | awk '/^Package: nodejs$/{f=1} f&&/^Filename: /{print $2; exit}')
   if [ -z "$FNAME" ]; then
     echo "[setup] could not resolve nodejs package — last lines:"; tail -3 $HOME/.curl-node.log
     return 1
   fi
   echo "[setup] downloading nodejs ($FNAME)…"
-  if ! curl -fSL --retry 3 -o "$TMP/node.deb" "$REPO/$FNAME" >>$HOME/.curl-node.log 2>&1; then
+  if ! curl -fSL --retry 3 --max-time 600 -o "$TMP/node.deb" "$REPO/$FNAME" >>$HOME/.curl-node.log 2>&1; then
     echo "[setup] download failed — last lines:"; tail -3 $HOME/.curl-node.log
     return 1
   fi
