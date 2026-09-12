@@ -206,7 +206,7 @@ async function main() {
     method: "POST",
     body: JSON.stringify({
       message:
-        "DSH Local v2.6.0 — session-token auth, 13/9/8/8 catalog, dashboard session link",
+        "DSH Local v2.7.0 — chat playground, files manager, usage analytics, activity feed, secrets vault, screenshots",
       tree: treeSha,
       parents,
     }),
