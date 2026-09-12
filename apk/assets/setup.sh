@@ -81,20 +81,32 @@ install_node_direct() {
   mkdir -p "$TMP"
   echo "[setup] fetching Termux package index…"
   local FNAME
-  local tried=0
-  for REPO in "${REPOS[@]}"; do
-    tried=1
-    echo "[setup] trying mirror: $REPO"
-    # Try gzipped Packages first
-    FNAME=$(curl -fsSL --retry 2 --max-time 120 "$REPO/dists/stable/main/binary-aarch64/Packages.gz" 2>>$HOME/.curl-node.log \
-      | gzip -d 2>/dev/null \
-      | awk '/^Package: nodejs$/{f=1} f&&/^Filename: /{print $2; exit}') 2>>$HOME/.curl-node.log
-    if [ -n "$FNAME" ]; then break; fi
-    # Try uncompressed Packages as fallback
-    FNAME=$(curl -fsSL --retry 2 --max-time 120 "$REPO/dists/stable/main/binary-aarch64/Packages" 2>>$HOME/.curl-node.log \
-      | awk '/^Package: nodejs$/{f=1} f&&/^Filename: /{print $2; exit}') 2>>$HOME/.curl-node.log
-    if [ -n "$FNAME" ]; then break; fi
-  done
+  local REPO
+  
+  # Try HTTPS repos first if HTTPS is available
+  if setup_https; then
+    for REPO in "${REPOS_HTTPS[@]}"; do
+      echo "[setup] trying HTTPS mirror: $REPO"
+      FNAME=$(curl -fsSL --retry 2 --max-time 120 "$REPO/dists/stable/main/binary-aarch64/Packages.gz" 2>>$HOME/.curl-node.log \
+        | gzip -d 2>/dev/null \
+        | awk '/^Package: nodejs$/{f=1} f&&/^Filename: /{print $2; exit}') 2>>$HOME/.curl-node.log
+      if [ -n "$FNAME" ]; then break; fi
+      FNAME=$(curl -fsSL --retry 2 --max-time 120 "$REPO/dists/stable/main/binary-aarch64/Packages" 2>>$HOME/.curl-node.log \
+        | awk '/^Package: nodejs$/{f=1} f&&/^Filename: /{print $2; exit}') 2>>$HOME/.curl-node.log
+      if [ -n "$FNAME" ]; then break; fi
+    done
+  fi
+  
+  # Fall back to HTTP repos
+  if [ -z "$FNAME" ]; then
+    for REPO in "${REPOS_HTTP[@]}"; do
+      echo "[setup] trying HTTP mirror: $REPO"
+      FNAME=$(curl -fsSL --retry 2 --max-time 120 "$REPO/dists/stable/main/binary-aarch64/Packages" 2>>$HOME/.curl-node.log \
+        | awk '/^Package: nodejs$/{f=1} f&&/^Filename: /{print $2; exit}') 2>>$HOME/.curl-node.log
+      if [ -n "$FNAME" ]; then break; fi
+    done
+  fi
+  
   if [ -z "$FNAME" ]; then
     echo "[setup] could not resolve nodejs package from any mirror"
     echo "[setup] last curl log:"; tail -10 $HOME/.curl-node.log
