@@ -616,6 +616,20 @@ public class MainActivity extends Activity {
             toggle.setText(R.string.stop);
             open.setEnabled(false);
             open.setAlpha(0.45f);
+        } else if (state != null && state.startsWith("error:")) {
+            // Crash with diagnostics: red dot + last line of server output on the card.
+            dot.clearAnimation();
+            dot.setVisibility(View.VISIBLE);
+            dot.setTextColor(0xFFF45B69);
+            if ("harness".equals(which) && progH != null) progH.setVisibility(View.GONE);
+            title.setText("Failed");
+            title.setTextColor(0xFFF45B69);
+            String msg = state.substring(6).trim();
+            sub.setText(msg.isEmpty() ? "process exited — check Terminal tab" : msg);
+            sub.setTextColor(0xFFF45B69);
+            toggle.setText(R.string.start);
+            open.setEnabled(false);
+            open.setAlpha(0.45f);
         } else {
             dot.clearAnimation();
             dot.setVisibility(View.INVISIBLE);
@@ -623,6 +637,7 @@ public class MainActivity extends Activity {
             title.setText(R.string.state_offline);
             title.setTextColor(0xFFE8EDF7);
             sub.setText(subOffline);
+            sub.setTextColor(0xFF8B96AC);
             toggle.setText(R.string.start);
             open.setEnabled(false);
             open.setAlpha(0.45f);

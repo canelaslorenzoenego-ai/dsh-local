@@ -129,6 +129,10 @@ public class ServerService extends Service {
             pb.environment().put("TMPDIR", BootstrapInstaller.tmpDir(this));
             pb.environment().put("PATH",
                     BootstrapInstaller.prefixDir(this) + "/bin:" + System.getenv("PATH"));
+            // CRITICAL: Termux binaries resolve their bundled .so files (libandroid-support,
+            // libc++_shared, …) through LD_LIBRARY_PATH — Termux always sets it, and without
+            // it every dynamic executable in the prefix fails to start.
+            pb.environment().put("LD_LIBRARY_PATH", BootstrapInstaller.prefixDir(this) + "/lib");
             pb.environment().put("LD_PRELOAD", "");
             pb.environment().put("DSH_FILES", filesDir());
             pb.redirectErrorStream(true);
@@ -136,16 +140,27 @@ public class ServerService extends Service {
             final String w = which;
             final Process proc = p;
             Thread t = new Thread(() -> {
+                StringBuilder tail = new StringBuilder();
+                java.io.File logFile = new java.io.File(getFilesDir(), "log-" + w + ".txt");
                 try {
                     java.io.InputStream in = proc.getInputStream();
+                    java.io.FileOutputStream log = new java.io.FileOutputStream(logFile);
                     byte[] b = new byte[4096];
                     int n;
-                    while ((n = in.read(b)) > 0) { /* console visible in Terminal tab */ }
+                    while ((n = in.read(b)) > 0) {
+                        log.write(b, 0, n);
+                        tail.append(new String(b, 0, n));
+                        if (tail.length() > 8000) tail.delete(0, tail.length() - 4000);
+                    }
+                    log.close();
                 } catch (Exception ignored) {}
+                int code = -1;
+                try { code = proc.exitValue(); } catch (Exception ignored) {}
                 synchronized (ServerService.this) {
                     if ("harness".equals(w)) harnessProc = null;
                     else proxyProc = null;
-                    status(w, "offline");
+                    if (code != 0) status(w, "error: " + lastLine(tail));
+                    else status(w, "offline");
                 }
             });
             t.setDaemon(true);
@@ -155,6 +170,20 @@ public class ServerService extends Service {
             status(which, "error: " + e.getMessage());
             return null;
         }
+    }
+
+    /** Last non-empty output line — surfaced on the dashboard when a server crashes. */
+    private static String lastLine(StringBuilder sb) {
+        String[] lines = sb.toString().split("\n");
+        for (int i = lines.length - 1; i >= 0; i--) {
+            String s = lines[i].trim();
+            if (!s.isEmpty()) {
+                s = s.replace("\"", "'");
+                if (s.length() > 140) s = s.substring(s.length() - 140);
+                return s;
+            }
+        }
+        return "process exited";
     }
 
     private synchronized void stopProc(String which) {

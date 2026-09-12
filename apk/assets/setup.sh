@@ -8,6 +8,16 @@ cd $HOME
 
 case "$1" in
   proxy)
+    # The gateway needs node too — don't depend on the harness having run first.
+    if ! command -v node >/dev/null 2>&1; then
+      echo "[proxy] node missing — installing (first run, ~1-2 min)"
+      apt update 2>&1 | tail -1
+      apt install -y nodejs 2>&1 | tail -2
+    fi
+    if ! command -v node >/dev/null 2>&1; then
+      echo "[proxy] ERROR: node install failed — start the Harness first or check Terminal"
+      exit 1
+    fi
     echo "[proxy] provisioning container in background (bash, git, python, jq, ripgrep)"
     sh $HOME/provision.sh >/dev/null 2>&1 &
     echo "[proxy] starting gateway :8787 + terminal :8788"

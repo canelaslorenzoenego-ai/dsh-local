@@ -7,7 +7,7 @@
 Embedded Linux · DeepSeek Harness console · OpenAI-compatible gateway · real terminal —
 all on `127.0.0.1`, all on-device, zero cloud, zero accounts.
 
-[![version](https://img.shields.io/badge/version-v2.7.0-4D6BFE)](#version-history)
+[![version](https://img.shields.io/badge/version-v2.7.1-4D6BFE)](#version-history)
 [![platform](https://img.shields.io/badge/platform-Android%208.0%2B%20ARM64-2FD575)](#requirements)
 [![tests](https://img.shields.io/badge/smoke%20tests-80%2F80%20%E2%9C%93-2FD575)](#testing)
 [![backend](https://img.shields.io/badge/backend-none%20·%20on--device-F5B942)](#the-web-page-in-this-repo)
@@ -45,7 +45,7 @@ workstation inside a single ~30 MB APK:
 
 ## Quick start
 
-1. **Download** [`public/downloads/dsh-local-v2.7.0.apk`](public/downloads/dsh-local-v2.7.0.apk)
+1. **Download** [`public/downloads/dsh-local-v2.7.1.apk`](public/downloads/dsh-local-v2.7.1.apk)
    (or grab it from the [website](https://canelaslorenzoenego-ai.github.io/dsh-local/))
    and sideload it (allow *install unknown apps* when prompted).
 2. **Open the app.** The embedded Linux extracts itself on first open (~30 s, one time)
@@ -309,7 +309,7 @@ The vault endpoint (`GET /api/secrets`) lists which ids are set — never values
 
 ```
 ├── apk/                              # the product: native Android source
-│   ├── AndroidManifest.xml           # com.dshlocal.app, targetSdk 28, v2.7.0
+│   ├── AndroidManifest.xml           # com.dshlocal.app, targetSdk 28, v2.7.1
 │   ├── build.sh                      # aapt2 → javac → d8 → zipalign → apksigner
 │   ├── src/com/dshlocal/app/
 │   │   ├── MainActivity.java         # dashboard, session-link card, PIN, WebView hosts
@@ -451,6 +451,7 @@ an inline error on the harness card; press Start to retry.
 | v2.5.1 | Animations, tool search/info, 43/43 smoke test green |
 | v2.6.0 | Session-token auth (dsh tokenized links), catalog 13/9/8/8, dashboard session card — 61/61 green |
 | **v2.7.0** | **Chat playground, files manager, usage analytics, activity feed, secrets vault, notification tap-through, in-app console — 80/80 green** |
+| v2.7.1 | **Device bugfix release: LD_LIBRARY_PATH exec fix, shebang repair, proxy self-installs node, crash diagnostics on the dashboard — 80/80 green** |
 
 ---
 

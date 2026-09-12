@@ -104,8 +104,61 @@ final class BootstrapInstaller {
         new File(homeDir(ctx)).mkdirs();
         new File(tmpDir(ctx)).mkdirs();
 
+        cb.onProgress("Fixing script paths…");
+        fixShebangs(prefix);
+
         cb.onProgress("Configuring package manager…");
         fixTermuxPaths(prefix);
+    }
+
+    /**
+     * The bootstrap ships scripts with shebangs that cannot execute under our
+     * prefix: hardcoded Termux paths (#!/data/data/com.termux/...), env-style
+     * (#!/usr/bin/env …) and other FHS paths (/usr/bin, /bin) — none of which
+     * exist on Android. Rewrites them to direct interpreters inside our prefix.
+     * Scans bin/ AND var/lib/dpkg/info/ — dpkg runs the *.postinst scripts there
+     * during `apt install nodejs`, and a dead postinst fails the whole install.
+     */
+    private static void fixShebangs(String prefix) {
+        String[] dirs = {"bin", "var/lib/dpkg/info"};
+        for (String dir : dirs) {
+            File d = new File(prefix, dir);
+            File[] files = d.listFiles();
+            if (files == null) continue;
+            for (File f : files) {
+                if (!f.isFile() || f.length() > 512 * 1024) continue; // scripts only
+                try {
+                    String s = read(f);
+                    if (!s.startsWith("#!")) continue; // binary
+                    int nl = s.indexOf('\n');
+                    String first = nl >= 0 ? s.substring(0, nl) : s;
+                    String body = nl >= 0 ? s.substring(nl + 1) : "";
+                    String interp = first.substring(2).trim();
+                    String newline;
+                    if (interp.startsWith(TERMUX_PREFIX)) {
+                        // same interpreter, our prefix
+                        newline = "#!" + prefix + interp.substring(TERMUX_PREFIX.length());
+                    } else if (interp.startsWith("/usr/bin/env") || interp.startsWith("/bin/env")) {
+                        // resolve `env <interpreter>` to the real binary
+                        String[] parts = interp.split("\\s+");
+                        String name = "sh";
+                        for (int i = 1; i < parts.length; i++) {
+                            if (!parts[i].startsWith("-")) { name = parts[i]; break; }
+                        }
+                        File target = new File(prefix, "bin/" + name);
+                        newline = "#!" + prefix + "/bin/" + (target.exists() ? name : "sh");
+                    } else if (interp.startsWith("/usr/bin/") || interp.startsWith("/bin/")) {
+                        String name = interp.substring(interp.lastIndexOf('/') + 1);
+                        File target = new File(prefix, "bin/" + name);
+                        newline = "#!" + prefix + "/bin/" + (target.exists() ? name : "sh");
+                    } else {
+                        continue; // already portable
+                    }
+                    if (body.contains(TERMUX_PREFIX)) body = body.replace(TERMUX_PREFIX, prefix);
+                    writeFile(f, newline + "\n" + body);
+                } catch (Exception ignored) {}
+            }
+        }
     }
 
     /** Rewrite hardcoded Termux paths in apt/dpkg config for our prefix. */
