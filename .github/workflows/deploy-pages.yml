@@ -1,0 +1,56 @@
+# Deploys the DSH Local product page to GitHub Pages on every push to main.
+# The release APK is copied in, so the site's Download button serves the real file.
+# One-time setup: repo Settings → Pages → Source: GitHub Actions.
+name: Deploy website to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build site (base /dsh-local/)
+        run: bunx --bun vite build --base=/dsh-local/ --outDir dist/site
+
+      - name: Copy release APK next to the site
+        run: |
+          mkdir -p dist/site
+          cp public/downloads/dsh-local-v2.7.0.apk dist/site/
+
+      - name: Spell out the base-path fallback (SPA is single-page, 404.html = index.html)
+        run: cp dist/site/index.html dist/site/404.html
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

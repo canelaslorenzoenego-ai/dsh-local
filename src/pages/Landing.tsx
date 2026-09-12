@@ -23,7 +23,11 @@ import {
 } from "lucide-react";
 
 const APK_VERSION = "v2.7.0";
-const APK_FILE = `/downloads/dsh-local-${APK_VERSION}.apk`;
+// On the GitHub Pages site (base /dsh-local/) the APK is copied next to index.html;
+// in local dev/preview the public/ mount serves it directly.
+const APK_FILE = import.meta.env.BASE_URL.startsWith("/dsh-local")
+  ? `dsh-local-${APK_VERSION}.apk`
+  : `/downloads/dsh-local-${APK_VERSION}.apk`;
 
 const fadeUp = {
   initial: { opacity: 0, y: 24 },

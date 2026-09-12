@@ -13,7 +13,7 @@ all on `127.0.0.1`, all on-device, zero cloud, zero accounts.
 [![backend](https://img.shields.io/badge/backend-none%20·%20on--device-F5B942)](#the-web-page-in-this-repo)
 [![license](https://img.shields.io/badge/license-unlicensed--private-8B96AC)]()
 
-**[⬇ Download the APK](#quick-start)** · **[Architecture](#architecture)** · **[Build from source](#build-from-source)** · **[FAQ](#faq)**
+**[🌐 Website](https://canelaslorenzoenego-ai.github.io/dsh-local/)** · **[⬇ Download the APK](#quick-start)** · **[Architecture](#architecture)** · **[Build from source](#build-from-source)** · **[FAQ](#faq)**
 
 </div>
 
@@ -41,9 +41,12 @@ workstation inside a single ~30 MB APK:
 |---|---|
 | ![Native dashboard](docs/screenshot-dashboard.png) | ![dsh web console](docs/screenshot-console.png) |
 
+**Jump to:** [What is this?](#what-is-this) · [Quick start](#quick-start) · [Architecture](#architecture) · [Session tokens](#the-session-token-model-real-dsh-web-behavior) · [Console](#the-agent-console-3080) · [Gateway](#gateway-configuration-8787) · [Data map](#where-your-data-lives) · [API reference](#rest-api-reference) · [Compare](#how-it-compares) · [Security](#security-model) · [Build](#build-from-source) · [FAQ](#faq)
+
 ## Quick start
 
 1. **Download** [`public/downloads/dsh-local-v2.7.0.apk`](public/downloads/dsh-local-v2.7.0.apk)
+   (or grab it from the [website](https://canelaslorenzoenego-ai.github.io/dsh-local/))
    and sideload it (allow *install unknown apps* when prompted).
 2. **Open the app.** The embedded Linux extracts itself on first open (~30 s, one time)
    with live progress on the harness card.
@@ -56,12 +59,14 @@ workstation inside a single ~30 MB APK:
 6. **Chat with a model** from the console's Chat tab — every completion is metered
    into the usage dashboard, and both servers log to the Activity feed.
 
+**Requirements**
+
 | | |
 |---|---|
-| **Requirements** | Android 8.0+ (API 26), ARM64 device |
-| **Storage** | ~300 MB after first run (Linux + Node) |
-| **Network** | None required to boot; needed only for model APIs / web fetch |
-| **Permissions** | Internet, foreground service, vibration. Nothing else. |
+| **Device** | Android 8.0+ (API 26), ARM64. No root, no Termux install. |
+| **Storage** | ~300 MB after first run (embedded Linux + Node.js). |
+| **Network** | None to boot; needed only for model APIs, git remotes, web fetch. |
+| **Permissions** | Internet, foreground service, vibration — nothing else. |
 
 ## Architecture
 
@@ -97,6 +102,12 @@ flowchart LR
 The two servers also talk to each other: the console's chat playground calls the
 gateway over loopback, and both write into one shared event log + usage ledger.
 
+Native ↔ server communication is the same story in reverse: the dashboard polls
+liveness directly on the three ports and reads `status-*.json` files the service
+writes; every WebView open carries the session token automatically. When the
+notification is tapped while servers run, the app resumes straight to the console
+or the terminal — whichever was last started.
+
 ## The session-token model (real `dsh web` behavior)
 
 This is the same flow you know from running `dsh web` in Termux:
@@ -120,7 +131,66 @@ REST session endpoints:
 
 Tokens are accepted as `?token=…`, `Authorization: Bearer …`, or `x-dsh-token: …`.
 
-## The agent console (`:3080`)
+## Where your data lives
+
+Everything is inside the app's private storage — Android's file manager can't see
+it, and uninstalling wipes all of it:
+
+| Path | What |
+|---|---|
+| `$HOME/dsh-data/state.json` | presets, toolset, agent policy, profiles, masked keys |
+| `$HOME/dsh-data/session.json` | the session token (0600) — delete = new token on next boot |
+| `$HOME/dsh-data/secrets.json` | integration keys in plaintext (0600) for agent shell use |
+| `$HOME/dsh-data/usage.json` | metered completions per model / per tool |
+| `$HOME/dsh-data/events.json` | activity feed (last 200 events) |
+| `$HOME/dsh-data/chats/` | chat conversations |
+| `$HOME/workspace/` | the agent's file root — the Files tab and the agent both live here |
+| `$HOME/gateway.json` | gateway config (upstream, API keys, models) |
+
+Full reset = Android Settings → Apps → DSH Local → **Clear data**.
+
+## REST API reference
+
+All routes under `/api/*` require the session token (`?token=`, `Authorization:
+Bearer`, or `x-dsh-token`), except `/healthz` and `/api/session*`. JSON in/out.
+
+| Method + path | Purpose |
+|---|---|
+| `GET /api/status` | liveness of all three ports, preset, tool count, usage totals, event count, session meta |
+| `GET /api/session` | token + tokenized link (the link source) |
+| `POST /api/session/exchange {token}` | validate a token, get the fresh link |
+| `POST /api/session/rotate` | mint new token, kill all old links |
+| `GET /api/presets` | the four dsh presets with tool counts + saved profiles |
+| `POST /api/presets/apply {id}` | atomically apply a preset |
+| `POST /api/presets/custom {tools,agent,name?}` | apply a custom toolset; optionally save as a named profile |
+| `GET /api/presets/load?id=preset\|current` | toolset for the editor/import flow |
+| `POST /api/presets/profile/apply · /delete` | apply / delete a saved profile |
+| `GET /api/catalog` | the 30-entry tool catalog (plugins, skills, MCPs, integrations) |
+| `GET /api/tool?type=&id=` | one entry's sub-tools, docs, availability |
+| `POST /api/install · /uninstall` | enable / disable one tool |
+| `POST /api/keys {integration,key}` | store an integration key (masked + vaulted) |
+| `GET /api/secrets` | which integration ids are set (never values) |
+| `POST /api/test {type,id}` | wiring test for a tool or integration |
+| `GET /api/chats · POST /api/chat` | list conversations · send a message through the gateway |
+| `GET /api/files?dir= · /read · /write · /delete` | workspace browser (traversal-safe) |
+| `GET /api/usage` | metered completions per model / tool |
+| `GET /api/events · POST /api/events/ack` | activity feed · clear it |
+| `GET /api/installed` | raw state.json (keys masked) |
+
+## How it compares
+
+| | DSH Local | Termux + manual dsh | Cloud agent in a browser |
+|---|---|---|---|
+| Install effort | one APK | pkg installs + configs | account + subscription |
+| Root/Termux needed | no | Termux required | — |
+| Runs fully on-device | yes | yes | no |
+| Session-token console | yes | manual | vendor-specific |
+| Gateway for other apps | built-in | build it yourself | no |
+| Offline-capable boot | yes | yes | no |
+| PIN/screen privacy | built-in | no | no |
+| Data location | app-private | Termux home | vendor cloud |
+
+## Security model
 
 A complete management SPA for the harness, file-backed in `$HOME/dsh-data/state.json`:
 
@@ -305,18 +375,30 @@ if any landmark drifts. Regenerate after UI changes:
 node scripts/screenshot.cjs
 ```
 
-## The web page in this repo
+## The website
 
-`src/` is a single static product/download page (Vite + React + Tailwind v4 +
-shadcn/ui, Framer Motion) that documents the app and serves the APK from
-`/downloads/`. There is deliberately **no backend** — no Convex, no auth, no
-database. The page and the APK are the whole product.
+The product page is **live at [canelaslorenzoenego-ai.github.io/dsh-local](https://canelaslorenzoenego-ai.github.io/dsh-local/)** — hero, feature cards, install steps and the download button pointing at the APK in this repo.
+
+It builds from the same `src/` that powers local previews, deployed by a GitHub
+Actions workflow on every push to `main`:
+
+- The Vite app is built with the right base path and the release APK is copied in,
+  so the **Download** button serves the real file from the Pages site.
+- If Pages isn't enabled yet: repo **Settings → Pages → Source: GitHub Actions** —
+  the next push (or re-running the workflow) publishes it. No other setup.
+- First deploy takes a minute or two; the workflow appears under the repo's
+  **Actions** tab.
+
+Run it locally instead:
 
 ```bash
 bun install
 bun tsc -b --noEmit   # typecheck
 bun run dev           # local preview (optional)
 ```
+
+There is deliberately **no backend** — no Convex, no auth, no database. The site,
+the README and the APK are the whole product.
 
 ## Publishing updates to GitHub
 
