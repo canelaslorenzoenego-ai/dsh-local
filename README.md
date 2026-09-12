@@ -70,25 +70,32 @@ workstation inside a single ~30 MB APK:
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    subgraph APP["DSH Local (native APK, targetSdk 28)"]
-        UI["Native dashboard<br/>MainActivity"]
-        SVC["ServerService<br/>(foreground service)"]
-        subgraph LINUX["embedded Linux (Termux bootstrap, app-private)"]
-            H["dsh-web.js<br/>:3080 console"]
-            P["proxy.js<br/>:8787 gateway"]
-            T["proxy.js<br/>:8788 terminal"]
-            SH["bash login shell"]
-        end
-    end
-    UI -->|"intents + status files"| SVC
-    SVC -->|"spawn + supervise"| LINUX
-    UI -->|"tokenized link"| H
-    UI -->|"?token=…"| T
-    H ---|"token gate"| T
-    P -->|"relay (optional)"| UP["OpenAI-compatible upstream"]
-    H -->|"tools"| SH
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│ DSH Local · native APK (targetSdk 28)                           │
+│                                                                 │
+│   Native dashboard (MainActivity)                               │
+│     │  intents + status files          ▲ poll :3080/:8787/:8788 │
+│     ▼                                  │ tokenized links        │
+│   ServerService — foreground service, spawns + supervises       │
+│     │                                                           │
+│     ▼                                                           │
+│  ┌── embedded Linux · Termux bootstrap · app-private ─────────┐ │
+│  │                                                            │ │
+│  │   dsh-web.js   :3080   harness console (SPA + REST)        │ │
+│  │   proxy.js     :8787   OpenAI-compatible gateway  ─────┐   │ │
+│  │   proxy.js     :8788   terminal (xterm.js + bash PTY)  │   │ │
+│  │   bash login shell  ◄── agent tools (core-shell)       │   │ │
+│  │                                                        │   │ │
+│  └────────────────────────────────────────────────────────┼───┘ │
+│                                                           ▼     │
+│                                    (optional) OpenAI-compatible │
+│                                    upstream — model API you set │
+└─────────────────────────────────────────────────────────────────┘
+
+  dashboard ──► console :3080   via #token=… link (only way in)
+  dashboard ──► terminal :8788  via ?token=… link
+  console  ──► gateway :8787    chat playground relays over loopback
 ```
 
 **Ports**
