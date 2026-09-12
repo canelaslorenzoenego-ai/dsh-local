@@ -1,0 +1,17 @@
+{
+  "name": "DSH Local",
+  "short_name": "DSH Local",
+  "description": "Native Android app with an embedded Linux, DeepSeek Harness console, OpenAI-compatible gateway, and terminal — all on localhost.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b0e14",
+  "theme_color": "#4d6bfe",
+  "icons": [
+    {
+      "src": "/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

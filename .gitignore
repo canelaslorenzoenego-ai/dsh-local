@@ -1,0 +1,10 @@
+# deps / build output
+node_modules
+dist
+.env.local
+
+# platform-generated
+src/convex/_generated
+
+# APK build intermediates (signed release lives in public/downloads/)
+apk/build

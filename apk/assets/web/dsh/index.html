@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>DSH Console</title>
+<style>
+:root{
+  --bg:#0B0E14; --surface:#121722; --surface2:#1A2130; --stroke:#263043;
+  --text:#E8EDF7; --muted:#8B96AC; --accent:#4D6BFE; --accent2:#8FA6FF;
+  --green:#2FD575; --amber:#F5B942; --red:#F45B69;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,sans-serif;min-height:100vh}
+.wrap{max-width:720px;margin:0 auto;padding:20px 16px 90px}
+h1{font-size:20px;font-weight:700}
+.sub{color:var(--muted);font-size:12px;margin-top:2px}
+.chips{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.chip{display:inline-flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--stroke);
+  border-radius:99px;padding:5px 12px;font-size:11px;color:var(--muted)}
+.chip b{color:var(--text);font-weight:600}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--muted)}
+.dot.on{background:var(--green);box-shadow:0 0 8px rgba(47,213,117,.6)}
+.dot.off{background:var(--red)}
+nav{display:flex;gap:6px;margin:18px 0;overflow-x:auto;padding-bottom:2px}
+nav button{flex:1;min-width:84px;background:transparent;border:1px solid transparent;border-radius:12px;
+  color:var(--muted);font-size:12.5px;font-weight:600;padding:10px 8px;cursor:pointer;white-space:nowrap}
+nav button.on{background:rgba(77,107,254,.13);border-color:rgba(77,107,254,.35);color:var(--text)}
+section{display:none}
+section.on{display:block}
+.card{background:var(--surface);border:1px solid var(--stroke);border-radius:14px;padding:16px;margin-bottom:12px}
+.card h3{font-size:14.5px;font-weight:700;display:flex;align-items:center;gap:8px}
+.card p{color:var(--muted);font-size:12.5px;margin-top:4px;line-height:1.5}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px}
+.btn{border:none;border-radius:10px;padding:9px 16px;font-size:12.5px;font-weight:600;cursor:pointer}
+.btn.primary{background:var(--accent);color:#fff}
+.btn.ghost{background:var(--surface2);border:1px solid var(--stroke);color:var(--text)}
+.btn:disabled{opacity:.4;cursor:default}
+.tag{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.badge{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:99px}
+.badge.on{background:rgba(47,213,117,.15);color:var(--green)}
+.badge.off{background:var(--surface2);color:var(--muted);border:1px solid var(--stroke)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.stat{background:var(--surface);border:1px solid var(--stroke);border-radius:14px;padding:14px}
+.stat .v{font-size:17px;font-weight:700;margin-top:6px}
+.stat .l{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+input{width:100%;background:var(--surface2);border:1px solid var(--stroke);border-radius:10px;
+  color:var(--text);font-size:13px;padding:11px 12px;margin-top:10px}
+select{width:100%;background:var(--surface2);border:1px solid var(--stroke);border-radius:10px;
+  color:var(--text);font-size:13px;padding:11px 12px;margin-top:10px}
+input:focus{outline:none;border-color:var(--accent)}
+.mono{font-family:ui-monospace,monospace;font-size:11.5px;color:var(--accent2)}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--surface2);
+  border:1px solid var(--stroke);color:var(--text);border-radius:12px;padding:11px 18px;font-size:12.5px;
+  opacity:0;transition:opacity .25s;pointer-events:none;max-width:88%;z-index:9}
+.toast.show{opacity:1}
+.empty{color:var(--muted);font-size:12.5px;text-align:center;padding:30px 0}
+.hint{color:var(--muted);font-size:11px;margin-top:6px;line-height:1.5}
+.tgrid{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.tgl{border:1px solid var(--stroke);background:var(--surface2);color:var(--muted);border-radius:99px;
+  padding:7px 12px;font-size:11.5px;cursor:pointer;font-weight:600}
+.tgl.on{border-color:rgba(47,213,117,.5);color:var(--green);background:rgba(47,213,117,.08)}
+input.chk{width:auto;background:transparent;border:none;margin:0;accent-color:var(--accent)}
+input.num{width:90px;text-align:center}
+.meta{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;font-size:11px;color:var(--muted)}
+.meta span{background:var(--surface2);border:1px solid var(--stroke);border-radius:8px;padding:4px 9px}
+.meta b{color:var(--text)}
+.search{width:100%;background:var(--surface2);border:1px solid var(--stroke);border-radius:10px;
+  color:var(--text);font-size:13px;padding:10px 14px;margin-bottom:12px}
+.search:focus{outline:none;border-color:var(--accent)}
+.tcard{cursor:pointer;transition:border-color .15s, transform .15s}
+.tcard:active{transform:scale(.985)}
+.tchip{display:inline-block;background:var(--surface2);border:1px solid var(--stroke);border-radius:8px;
+  padding:3px 9px;font-size:11px;color:var(--accent2);margin:3px 4px 0 0;font-family:ui-monospace,monospace}
+.modal{position:fixed;inset:0;background:rgba(4,6,12,.72);backdrop-filter:blur(4px);z-index:20;
+  display:none;align-items:flex-end;justify-content:center}
+.modal.show{display:flex}
+.msheet{background:var(--surface);border:1px solid var(--stroke);border-radius:18px 18px 0 0;
+  width:100%;max-width:720px;max-height:86vh;overflow-y:auto;padding:22px 18px 26px;
+  animation:up .22s ease-out}
+@keyframes up{from{transform:translateY(40px);opacity:0}to{transform:translateY(0);opacity:1}}
+.mhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.mclose{background:var(--surface2);border:1px solid var(--stroke);color:var(--muted);border-radius:99px;
+  width:30px;height:30px;font-size:14px;cursor:pointer}
+.msec{margin-top:14px}
+.msec .tag{display:block;margin-bottom:6px}
+.mdocs{color:var(--text);font-size:13px;line-height:1.65}
+
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>⚡ DSH Console</h1>
+  <div class="sub">DeepSeek Harness · localhost · on-device</div>
+  <div class="chips" id="envchips"></div>
+
+  <nav id="nav">
+    <button data-t="presets" class="on">Presets</button>
+    <button data-t="overview">Overview</button>
+    <button data-t="plugins">Plugins</button>
+    <button data-t="skills">Skills</button>
+    <button data-t="mcps">MCPs</button>
+    <button data-t="integrations">Integrations</button>
+  </nav>
+
+  <section id="presets" class="on"></section>
+  <section id="overview"></section>
+  <section id="plugins"></section>
+  <section id="skills"></section>
+  <section id="mcps"></section>
+  <section id="integrations"></section>
+</div>
+<div class="toast" id="toast"></div>
+<div class="modal" id="toolModal" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="msheet" id="toolSheet"></div>
+</div>
+
+<script>
+const S = { status:null, catalog:null, installed:null, presets:null };
+const $ = id => document.getElementById(id);
+
+function toast(m){
+  const t = $('toast'); t.textContent = m; t.classList.add('show');
+  clearTimeout(t._h); t._h = setTimeout(()=>t.classList.remove('show'), 2600);
+}
+async function api(path, opts){
+  const r = await fetch(path, opts);
+  return r.json();
+}
+const post = (p,b) => api(p, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(b)});
+
+// ---- nav ----
+$('nav').addEventListener('click', e => {
+  const b = e.target.closest('button'); if(!b) return;
+  document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on', x===b));
+  document.querySelectorAll('section').forEach(s=>s.classList.toggle('on', s.id===b.dataset.t));
+});
+
+// ---- rendering ----
+function chip(label, ok, extra){
+  return `<span class="chip"><span class="dot ${ok?'on':'off'}"></span><b>${label}</b>${extra||''}</span>`;
+}
+function renderEnv(){
+  const s = S.status, c = [];
+  c.push(chip('Harness', s.harness));
+  c.push(chip('Gateway', s.gateway));
+  c.push(chip('Terminal', s.terminal));
+  c.push(chip('Node', true, ' ' + s.node));
+  $('envchips').innerHTML = c.join('');
+}
+function renderOverview(){
+  const s = S.status, n = S.installed;
+  const cnt = k => Object.values(n[k]||{}).filter(v=>v&&v.enabled).length;
+  const con = Object.keys(n.keys||{}).length;
+  $('overview').innerHTML = `
+    <div class="grid">
+      <div class="stat"><div class="l">Preset</div><div class="v">${s.preset}</div></div>
+      <div class="stat"><div class="l">Toolset</div><div class="v">${s.tools} tools</div></div>
+      <div class="stat"><div class="l">Node</div><div class="v mono">${s.node}</div></div>
+      <div class="stat"><div class="l">Integrations</div><div class="v">${con} connected</div></div>
+      <div class="stat"><div class="l">Plugins</div><div class="v">${cnt('plugins')} active</div></div>
+      <div class="stat"><div class="l">Skills</div><div class="v">${cnt('skills')} active</div></div>
+      <div class="stat"><div class="l">MCPs</div><div class="v">${cnt('mcps')} active</div></div>
+      <div class="stat"><div class="l">Gateway</div><div class="v mono">:8787 ${s.gateway?'up':'down'}</div></div>
+    </div>
+    <div class="card" style="margin-top:12px">
+      <h3>🧩 How this fits together</h3>
+      <p>The harness serves its agent API on <span class="mono">127.0.0.1:3080</span> and consumes
+      any OpenAI-compatible model endpoint. Point it at the gateway
+      (<span class="mono">http://127.0.0.1:8787/v1</span>) or store a provider key under
+      Integrations. Pick a preset to shape the model's toolset: plugins give it tools,
+      skills shape its behavior, MCPs add external context servers.</p>
+    </div>`;
+}
+function isOn(type, id){
+  const v = (S.installed[type]||{})[id];
+  return !!(v && v.enabled);
+}
+function renderList(type, title, icon){
+  const q = (window['q_' + type] || '').toLowerCase();
+  const items = S.catalog[type].filter(it =>
+    !q || it.name.toLowerCase().includes(q) || it.desc.toLowerCase().includes(q)
+    || (it.tools || []).join(' ').toLowerCase().includes(q));
+  const cards = items.map(it => `
+    <div class="card tcard" onclick="openTool('${type}','${it.id}')">
+      <h3>${icon} ${it.name}
+        <span class="badge ${isOn(type,it.id)?'on':'off'}">${isOn(type,it.id)?'active':'off'}</span>
+      </h3>
+      <p>${it.desc}</p>
+      ${(it.tools||[]).length ? '<div style="margin-top:8px">' + it.tools.slice(0,3).map(t=>`<span class="tchip">${t}</span>`).join('') + (it.tools.length>3?`<span class="tchip">+${it.tools.length-3}</span>`:'') + '</div>' : ''}
+      <div class="row">
+        <button class="btn ghost" onclick="event.stopPropagation();openTool('${type}','${it.id}')">Info</button>
+        <button class="btn ${isOn(type,it.id)?'ghost':'primary'}"
+          onclick="event.stopPropagation();toggleOne('${type}','${it.id}')">${isOn(type,it.id)?'Disable':'Enable'}</button>
+      </div>
+    </div>`).join('');
+  $(''+type).innerHTML = `
+    <input class="search" id="q-${type}" placeholder="Search ${title.toLowerCase()}, tools, capabilities…"
+      value="${(window['q_'+type]||'').replace(/"/g,'&quot;')}" oninput="searchList('${type}', this.value)">
+    ${cards || '<div class="empty">No matches for “' + q + '”.</div>'}`;
+}
+function searchList(type, v){
+  window['q_' + type] = v;
+  const el = document.getElementById('q-' + type);
+  renderList(type, type.charAt(0).toUpperCase()+type.slice(1), type==='plugins'?'🧩':type==='skills'?'🎯':'🔌');
+  const el2 = document.getElementById('q-' + type);
+  el2.focus(); el2.setSelectionRange(el2.value.length, el2.value.length);
+}
+async function openTool(type, id){
+  const r = await api('/api/tool?type=' + type + '&id=' + id);
+  const it = r.item;
+  const since = r.since ? new Date(r.since).toLocaleDateString() : null;
+  $('toolSheet').innerHTML = `
+    <div class="mhead">
+      <h3 style="font-size:17px">${it.name} <span class="badge ${r.enabled?'on':'off'}">${r.enabled?'enabled':'off'}</span></h3>
+      <button class="mclose" onclick="document.getElementById('toolModal').classList.remove('show')">✕</button>
+    </div>
+    <span class="tag">${type.slice(0,-1)} · ${it.kind || 'built-in'}</span>
+    <p style="color:var(--muted);font-size:13px;margin-top:6px">${it.desc}</p>
+    ${(it.tools&&it.tools.length)?`<div class="msec"><span class="tag">Sub-tools the model receives</span>
+      <div>${it.tools.map(t=>`<span class="tchip">${t}</span>`).join('')}</div></div>`:''}
+    <div class="msec"><span class="tag">What it does</span>
+      <p class="mdocs">${it.docs || 'No extended documentation for this entry.'}</p></div>
+    <div class="msec"><span class="tag">Availability</span>
+      <div class="meta">
+        <span>in presets <b>${r.inPresets.join(', ') || 'none — custom only'}</b></span>
+        ${since?`<span>enabled since <b>${since}</b></span>`:''}
+        <span>active preset <b>${r.activePreset}</b></span>
+      </div></div>
+    ${it.env?`<div class="msec"><span class="tag">Credential</span>
+      <p class="mdocs">Uses <span class="mono">${it.env}</span> · ${it.hint||''}</p></div>`:''}
+    <div class="row" style="margin-top:20px">
+      <button class="btn ghost" onclick="testOne('${type}','${id}');document.getElementById('toolModal').classList.remove('show')">Test</button>
+      <button class="btn ${r.enabled?'ghost':'primary'}"
+        onclick="toggleOne('${type}','${id}');document.getElementById('toolModal').classList.remove('show')">${r.enabled?'Disable':'Enable'}</button>
+    </div>`;
+  $('toolModal').classList.add('show');
+}
+function renderIntegrations(){
+  $('integrations').innerHTML = S.catalog.integrations.map(it => {
+    const set = !!(S.installed.keys||{})[it.id];
+    return `
+    <div class="card">
+      <h3>🔗 ${it.name}
+        <span class="badge ${set?'on':'off'}">${set?'key stored':'not set'}</span>
+      </h3>
+      <p>Env var <span class="mono">${it.env}</span> · ${it.hint}</p>
+      <input id="in-${it.id}" type="password" placeholder="Paste ${it.name} key…">
+      <div class="row">
+        <button class="btn ghost" onclick="testOne('integration','${it.id}')">Test</button>
+        <button class="btn primary" onclick="saveKey('${it.id}')">Save key</button>
+      </div>
+      <div class="hint">Keys stay in app-private storage on this device. Never synced, never logged.</div>
+    </div>`;
+  }).join('');
+}
+function renderAll(){
+  renderEnv();
+  renderPresets();
+  renderOverview();
+  renderList('plugins','Plugins','🧩');
+  renderList('skills','Skills','🎯');
+  renderList('mcps','MCPs','🔌');
+  renderIntegrations();
+}
+
+function renderPresets(){
+  const P = S.presets;
+  $('presets').innerHTML = P.presets.map(p => `
+    <div class="card">
+      <h3>${p.icon} ${p.name}
+        ${p.codeMode ? '<span class="badge on">PTC</span>' : ''}
+        <span class="badge ${P.active===p.id?'on':'off'}">${P.active===p.id?'active':'available'}</span>
+      </h3>
+      <p>${p.desc}</p>
+      <div class="meta">
+        <span><b>${p.tools}</b> tools</span>
+        <span>sandbox <b>${p.sandbox}</b></span>
+        <span>auto-approve <b>${p.autoApprove?'on':'off'}</b></span>
+        <span>swarms <b>×${p.maxSubAgents}</b></span>
+      </div>
+      <div class="row">
+        <span class="tag">${p.id==='cordis' ? 'high-trust · reshapes runtime' : p.id==='minimal' ? '2 tools · no compaction' : p.id==='code' ? 'Code Mode SDK' : 'dsh default'}</span>
+        <button class="btn ${P.active===p.id?'ghost':'primary'}"
+          onclick="applyPreset('${p.id}')">${P.active===p.id?'Re-apply':'Apply'}</button>
+      </div>
+    </div>`).join('')}
+    ${customCard()}`;
+}
+function customCard(){
+  const ag = (S.status && S.status.agent) || {};
+  const aa = ag.autoApprove === true;
+  const cm = ag.codeMode === true;
+  const sb = ag.sandbox || 'workspace-write';
+  const msa = ag.maxSubAgents || 4;
+  const model = ag.model || 'gateway';
+  const sysp = ag.systemPrompt || '';
+  const sel = [
+    ['standard','📦 Standard — full coding agent'],['code','⚡ PTC — Code Mode SDK'],
+    ['minimal','🎯 Minimal — bash + str_replace'],['cordis','🧬 Creator — runtime inspection'],
+    ['current','✏️ Keep my current toolset']];
+  const group = (t,icon,label) => `
+    <div style="margin-top:12px">
+      <div class="tag">${icon} ${label}</div>
+      <div class="tgrid">${S.catalog[t].map(it =>
+        `<button class="tgl ${studioOn(t,it.id)?'on':''}" data-t="${t}" data-id="${it.id}" onclick="toggleStudioTool(this)">${it.name}</button>`
+      ).join('')}</div>
+    </div>`;
+  return `
+    <div class="card">
+      <h3>🎛️ Custom preset studio</h3>
+      <p>Compose the agent exactly how you want it — start from a preset, flip tools,
+      set the policy and prompt, then save as a reusable profile.</p>
+      <div class="tag" style="margin-top:14px">1 · Start from</div>
+      <select id="fromSel">${sel.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select>
+      <button class="btn ghost" style="margin-top:10px" onclick="loadInto()">Load into editor</button>
+      <div id="studioTools">
+        ${group('plugins','🧩','Plugins — tools the model can call')}
+        ${group('skills','🎯','Skills — behaviors it knows')}
+        ${group('mcps','🔌','MCPs — external context servers')}
+      </div>
+      <div class="tag" style="margin-top:16px">2 · Execution policy</div>
+      <select id="sbSel">
+        <option value="read-only" ${sb==='read-only'?'selected':''}>read-only — backend denies writes</option>
+        <option value="workspace-write" ${sb==='workspace-write'?'selected':''}>workspace-write — writes under workspace root (default)</option>
+        <option value="danger-full-access" ${sb==='danger-full-access'?'selected':''}>danger-full-access — confinement bypassed, approvals never</option>
+      </select>
+      <div class="row">
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text)">
+          <input type="checkbox" class="chk" id="cmChk" ${cm?'checked':''}> Code Mode SDK (PTC)
+        </label>
+        <span class="tag">one program instead of many calls</span>
+      </div>
+      <div class="row">
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text)">
+          <input type="checkbox" class="chk" id="aaChk" ${aa?'checked':''}> Auto-approve tool use
+        </label>
+        <span class="tag">the model acts without asking</span>
+      </div>
+      <div class="row">
+        <span class="tag">Max parallel sub-agents</span>
+        <input type="number" class="num" id="msaIn" min="1" max="16" value="${msa}">
+      </div>
+      <div class="tag" style="margin-top:16px">3 · Model &amp; prompt</div>
+      <input id="modelIn" type="text" placeholder="Model route — gateway (127.0.0.1:8787/v1) or a provider id" value="${model.replace(/"/g,'&quot;')}">
+      <textarea id="syspIn" placeholder="Extra system prompt (optional) — e.g. 'Always write tests first. Prefer TypeScript.'"
+        style="width:100%;background:var(--surface2);border:1px solid var(--stroke);border-radius:10px;color:var(--text);font-size:13px;padding:11px 12px;margin-top:10px;min-height:70px;font-family:inherit">${sysp.replace(/</g,'&lt;')}</textarea>
+      <div class="tag" style="margin-top:16px">4 · Save</div>
+      <div class="row">
+        <input id="profName" type="text" placeholder="Profile name (e.g. my-coding-agent)" style="margin-top:0;flex:1">
+        <button class="btn primary" onclick="saveCustom()">Apply &amp; save</button>
+      </div>
+      <div class="row">
+        <span class="tag">portable config</span>
+        <span>
+          <button class="btn ghost" onclick="exportPreset()">Export JSON</button>
+          <button class="btn ghost" onclick="document.getElementById('impFile').click()">Import</button>
+          <input type="file" id="impFile" accept="application/json" style="display:none" onchange="importPreset(this.files[0])">
+        </span>
+      </div>
+    </div>
+    ${profilesHtml()}`;
+}
+function studioOn(type, id){ return isOn(type, id); }
+function toggleStudioTool(btn){
+  btn.classList.toggle('on');
+  const n = document.querySelectorAll('#studioTools .tgl.on').length;
+  toast(n + ' tools selected — Apply & save to make it live');
+}
+function profilesHtml(){
+  const pr = (S.presets && S.presets.profiles) || [];
+  if (!pr.length) return '';
+  return `
+    <div class="card">
+      <h3>📁 Saved profiles</h3>
+      ${pr.map(p => `
+      <div class="row" style="margin-top:10px">
+        <span style="font-size:13px;color:var(--text)"><b>${p.name}</b>
+          <span class="tag">${p.tools} tools · ${p.sandbox}${p.autoApprove?' · auto-approve':''}</span></span>
+        <span>
+          <button class="btn ghost" onclick="applyProfile('${p.name}')">Apply</button>
+          <button class="btn ghost" onclick="deleteProfile('${p.name}')">✕</button>
+        </span>
+      </div>`).join('')}
+    </div>`;
+}
+async function loadInto(){
+  const id = document.getElementById('fromSel').value;
+  const r = await api('/api/presets/load?id=' + id);
+  document.querySelectorAll('#studioTools .tgl').forEach(b => {
+    const on = !!(r.tools[b.dataset.t] && r.tools[b.dataset.t][b.dataset.id]);
+    b.classList.toggle('on', on);
+  });
+  if (r.agent.sandbox) document.getElementById('sbSel').value = r.agent.sandbox;
+  document.getElementById('cmChk').checked = r.agent.codeMode === true;
+  document.getElementById('aaChk').checked = r.agent.autoApprove === true;
+  if (r.agent.maxSubAgents) document.getElementById('msaIn').value = r.agent.maxSubAgents;
+  if (typeof r.agent.systemPrompt === 'string') document.getElementById('syspIn').value = r.agent.systemPrompt;
+  if (r.agent.model) document.getElementById('modelIn').value = r.agent.model;
+  toast('Loaded “' + id + '” into the editor');
+}
+async function applyProfile(name){
+  const r = await post('/api/presets/profile/apply', {name});
+  toast('Profile “' + name + '” live · ' + r.tools + ' tools');
+  await refresh();
+}
+async function deleteProfile(name){
+  await post('/api/presets/profile/delete', {name});
+  toast('Profile deleted');
+  await refresh();
+}
+async function exportPreset(){
+  const r = await api('/api/presets/load?id=current');
+  const blob = new Blob([JSON.stringify(r, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'dsh-preset.json'; a.click();
+  toast('Preset exported — share it or keep it');
+}
+async function importPreset(file){
+  if (!file) return;
+  try {
+    const j = JSON.parse(await file.text());
+    const r = await post('/api/presets/custom', j);
+    toast('Imported · ' + r.tools + ' tools live');
+    await refresh();
+  } catch(e) { toast('Import failed: not a valid preset file'); }
+}
+
+async function applyPreset(id){
+  const r = await post('/api/presets/apply', {id});
+  toast('Preset “' + id + '” applied · ' + r.tools + ' tools live');
+  await refresh();
+}
+async function toggleTool(type, id){
+  const r = await post('/api/presets/toggle', {type, id});
+  toast((r.enabled ? 'Enabled ' : 'Disabled ') + id + ' · ' + r.tools + ' tools · preset: custom');
+  await refresh();
+}
+async function saveCustom(){
+  const tools = { plugins: {}, skills: {}, mcps: {} };
+  document.querySelectorAll('#studioTools .tgl').forEach(b => {
+    if (b.classList.contains('on')) tools[b.dataset.t][b.dataset.id] = true;
+  });
+  const agent = {
+    autoApprove: document.getElementById('aaChk').checked,
+    codeMode: document.getElementById('cmChk').checked,
+    sandbox: document.getElementById('sbSel').value,
+    maxSubAgents: parseInt(document.getElementById('msaIn').value, 10) || 4,
+    model: document.getElementById('modelIn').value.trim() || 'gateway',
+    systemPrompt: document.getElementById('syspIn').value,
+  };
+  const name = document.getElementById('profName').value.trim();
+  const r = await post('/api/presets/custom', {tools, agent, name});
+  toast('Custom preset live · ' + r.tools + ' tools' + (name ? ' · saved as “' + name + '”' : ''));
+  await refresh();
+}
+
+// ---- actions ----
+async function refresh(){
+  [S.status, S.catalog, S.installed, S.presets] = await Promise.all([
+    api('/api/status'), api('/api/catalog'), api('/api/installed'), api('/api/presets')]);
+  renderAll();
+}
+async function toggleOne(type, id){
+  const on = isOn(type, id);
+  await post('/api/' + (on ? 'uninstall' : 'install'), {type, id});
+  toast((on ? 'Disabled ' : 'Enabled ') + id);
+  await refresh();
+}
+async function testOne(type, id){
+  const r = await post('/api/test', {type, id});
+  toast((r.ok ? '✓ ' : '✗ ') + r.msg);
+}
+async function saveKey(id){
+  const el = $('in-' + id);
+  if (!el.value.trim()) { toast('Paste a key first'); return; }
+  await post('/api/keys', {integration: id, key: el.value.trim()});
+  el.value = '';
+  toast('Key stored on-device');
+  await refresh();
+}
+
+refresh();
+setInterval(() => { api('/api/status').then(s => { S.status = s; renderEnv(); }).catch(()=>{}); }, 5000);
+</script>
+</body>
+</html>
