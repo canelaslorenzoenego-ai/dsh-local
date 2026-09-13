@@ -22,13 +22,13 @@ import {
   Zap,
 } from "lucide-react";
 
-const APK_VERSION = "v2.8.8";
+const APK_VERSION = "v2.8.9";
 // Primary: the GitHub Release asset (permanent, CDN-backed, works everywhere).
-// Fallback: the raw file on main. Both serve the same signed v2.8.8 APK.
+// Fallback: the raw file on main. Both serve the same signed v2.8.9 APK.
 const APK_FILE =
-  "https://github.com/canelaslorenzoenego-ai/dsh-local/releases/latest/download/dsh-local-v2.8.8.apk";
+  "https://github.com/canelaslorenzoenego-ai/dsh-local/releases/latest/download/dsh-local-v2.8.9.apk";
 const APK_FALLBACK =
-  "https://raw.githubusercontent.com/canelaslorenzoenego-ai/dsh-local/main/public/downloads/dsh-local-v2.8.8.apk";
+  "https://raw.githubusercontent.com/canelaslorenzoenego-ai/dsh-local/main/public/downloads/dsh-local-v2.8.9.apk";
 void APK_FALLBACK;
 
 const fadeUp = {
